@@ -326,7 +326,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 }
 
 class _ExpenseRow extends StatelessWidget {
-  final dynamic expense;
+  final Expense expense;
   const _ExpenseRow(this.expense);
 
   @override
@@ -346,12 +346,12 @@ class _ExpenseRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  expense.title as String,
+                  expense.title,
                   style: const TextStyle(
                       fontWeight: FontWeight.w500, fontSize: 14),
                 ),
                 Text(
-                  relativeDate(expense.timestamp as DateTime),
+                  relativeDate(expense.timestamp),
                   style: const TextStyle(
                       color: kTextSecondary, fontSize: 12),
                 ),
@@ -359,7 +359,7 @@ class _ExpenseRow extends StatelessWidget {
             ),
           ),
           Text(
-            '−₹${(expense.amount as double).toStringAsFixed(2)}',
+            '−₹${expense.amount.toStringAsFixed(2)}',
             style: const TextStyle(
               fontWeight: FontWeight.w600,
               fontSize: 14,

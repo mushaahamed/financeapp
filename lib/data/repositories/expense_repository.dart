@@ -36,7 +36,7 @@ class ExpenseRepository {
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 1));
     final list = await _db.getExpensesBetween(start, end);
-    return list.fold(0.0, (sum, e) => sum + e.amount);
+    return list.fold<double>(0.0, (sum, e) => sum + e.amount);
   }
 
   Future<double> getTotalForWeek() async {
@@ -44,14 +44,14 @@ class ExpenseRepository {
     final monday = now.subtract(Duration(days: now.weekday - 1));
     final start = DateTime(monday.year, monday.month, monday.day);
     final list = await _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
-    return list.fold(0.0, (sum, e) => sum + e.amount);
+    return list.fold<double>(0.0, (sum, e) => sum + e.amount);
   }
 
   Future<double> getTotalForMonth() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, 1);
     final list = await _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
-    return list.fold(0.0, (sum, e) => sum + e.amount);
+    return list.fold<double>(0.0, (sum, e) => sum + e.amount);
   }
 
   /// Inserts the expense and adjusts cash. Returns the new id.
