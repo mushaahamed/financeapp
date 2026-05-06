@@ -1,0 +1,48 @@
+name: paisa
+description: Personal finance and investment tracker — local-first, offline, private.
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Local database
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
+
+  # Secure storage for Gemini API key
+  flutter_secure_storage: ^9.2.2
+
+  # HTTP for Gemini API calls
+  http: ^1.2.1
+
+  # Background weekly price update
+  workmanager: ^0.5.2
+
+  # Fonts
+  google_fonts: ^6.2.1
+
+  # Date / number formatting
+  intl: ^0.19.0
+
+  # Spacing utility
+  gap: ^3.0.1
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
