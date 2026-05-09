@@ -40,16 +40,26 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
   }
 
   Future<void> _manualRefresh() async {
+    final key = await ref.read(settingsRepoProvider).getGeminiApiKey();
+    if (!mounted) return;
+    if (key == null || key.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Add your Gemini API key in Settings first'),
+          backgroundColor: kLoss));
+      return;
+    }
     ref.read(priceRefreshingProvider.notifier).state = true;
     final err = await ref.read(investmentsProvider.notifier).refreshAll();
     ref.read(priceRefreshingProvider.notifier).state = false;
     if (!mounted) return;
     if (err != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(err), backgroundColor: kLoss));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(err),
+          backgroundColor: kLoss,
+          duration: const Duration(seconds: 6)));
     } else {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Prices updated via Gemini')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✓ Prices updated via Gemini')));
     }
   }
 

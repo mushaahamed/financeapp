@@ -14,7 +14,7 @@ const kPad = 16.0;
 const kRadius = 12.0;
 const kRadiusLg = 16.0;
 
-const kGeminiDefaultModel = 'gemini-2.0-flash';
+const kGeminiDefaultModel = 'gemini-1.5-flash';
 const kDefaultCurrency = 'INR';
 const kDefaultCurrencySymbol = '₹';
 

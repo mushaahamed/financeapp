@@ -9,7 +9,7 @@ class GeminiResult {
   final String? error;
 
   const GeminiResult({this.currentValue, this.returnPercent, this.error});
-  bool get success => currentValue != null;
+  bool get success => currentValue != null && currentValue! > 0;
 }
 
 class GeminiService {
@@ -21,36 +21,44 @@ class GeminiService {
   static const _base =
       'https://generativelanguage.googleapis.com/v1beta/models';
 
-  // ── Prompt ────────────────────────────────────────────────────────────────
-  // Keep it SHORT and direct. Free-tier Gemini refuses long "financial data"
-  // prompts. Framing it as "rough estimate for personal tracking" works.
+  // Very short, direct prompt — free tier refuses long "financial advice" prompts
   String _prompt(InvestmentAsset a) {
     final sym = (a.symbol != null && a.symbol!.isNotEmpty)
-        ? ' (${a.symbol})'
+        ? ' ticker:${a.symbol}'
         : '';
-    final typeLabel = kAssetTypeLabels[a.type] ?? a.type;
-    return 'Rough estimate for personal portfolio tracking (not financial advice).\n'
-        'Indian investment: ${a.name}$sym, type: $typeLabel\n'
-        'Amount invested: INR ${a.amountInvested.toStringAsFixed(0)}\n'
-        'Estimate current value and return % based on typical Indian market performance.\n'
-        '{"currentValue": <number>, "returnPercent": <number>}';
+    return 'Indian investment tracker needs a rough estimate.\n'
+        'Asset: "${a.name}"$sym type:${a.type} invested:${a.amountInvested.toStringAsFixed(0)} INR\n'
+        'Based on typical Indian market performance, estimate current value.\n'
+        'Reply with ONLY this JSON (numbers only, no text before or after):\n'
+        '{"currentValue":NNNN,"returnPercent":NN}';
   }
 
-  // ── Single fetch with retry on 429 ────────────────────────────────────────
   Future<GeminiResult> fetchValue(InvestmentAsset asset) async {
+    // Try up to 3 times; on 429 back off, on 400 try without JSON mime type
     for (int attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        // Back-off: 3s, 7s
-        await Future.delayed(Duration(seconds: attempt * 3 + 1));
-      }
-      final result = await _doFetch(asset);
-      if (result != null) return result;
+      if (attempt > 0) await Future.delayed(Duration(seconds: attempt * 4));
+
+      // First attempt: with response_mime_type (forces JSON on supported models)
+      // Second attempt: without (fallback for older endpoints)
+      final useMime = attempt < 2;
+      final result = await _call(asset, useJsonMime: useMime);
+
+      if (result == null) continue; // 429 — retry
+      return result;
     }
-    return const GeminiResult(error: 'Could not get a response after retries');
+    return const GeminiResult(error: 'No response after 3 attempts. Check API key in Settings.');
   }
 
-  Future<GeminiResult?> _doFetch(InvestmentAsset asset) async {
+  /// Returns null only on 429 (caller should retry). All other cases return a GeminiResult.
+  Future<GeminiResult?> _call(InvestmentAsset asset, {required bool useJsonMime}) async {
     final url = Uri.parse('$_base/$model:generateContent?key=$apiKey');
+
+    final genConfig = <String, dynamic>{
+      'temperature': 0.1,
+      'maxOutputTokens': 80,
+    };
+    if (useJsonMime) genConfig['response_mime_type'] = 'application/json';
+
     try {
       final res = await http
           .post(
@@ -64,91 +72,103 @@ class GeminiService {
                   ]
                 }
               ],
-              'generationConfig': {
-                'temperature': 0.1,
-                'maxOutputTokens': 64,
-                // Force JSON output — key fix for free-tier reliability
-                'response_mime_type': 'application/json',
-              },
+              'generationConfig': genConfig,
             }),
           )
-          .timeout(const Duration(seconds: 25));
+          .timeout(const Duration(seconds: 30));
 
-      if (res.statusCode == 429) {
-        // Rate-limited — caller will retry
+      if (res.statusCode == 429) return null; // rate-limited, retry
+
+      if (res.statusCode == 400 && useJsonMime) {
+        // This model may not support response_mime_type — caller retries without it
         return null;
       }
 
       if (res.statusCode != 200) {
-        final body = jsonDecode(res.body);
-        final msg = body['error']?['message'] as String? ??
-            'HTTP ${res.statusCode}';
+        String msg;
+        try {
+          msg = (jsonDecode(res.body) as Map)['error']?['message'] as String? ??
+              'HTTP ${res.statusCode}';
+        } catch (_) {
+          msg = 'HTTP ${res.statusCode}';
+        }
         return GeminiResult(error: msg);
       }
 
       final decoded = jsonDecode(res.body) as Map<String, dynamic>;
       final text = decoded['candidates']?[0]?['content']?['parts']?[0]
           ?['text'] as String?;
+
       if (text == null || text.trim().isEmpty) {
-        return const GeminiResult(error: 'Empty response from Gemini');
+        // Check for safety block
+        final reason = decoded['candidates']?[0]?['finishReason'] as String?;
+        return GeminiResult(
+            error: reason == 'SAFETY'
+                ? 'Blocked by Gemini safety filter'
+                : 'Empty response');
       }
 
-      return _parseResult(text);
-    } catch (e) {
-      return GeminiResult(error: e.toString());
+      return _parse(text.trim());
+    } on Exception catch (e) {
+      return GeminiResult(error: 'Network error: $e');
     }
   }
 
-  // ── Robust JSON extraction ────────────────────────────────────────────────
-  GeminiResult _parseResult(String text) {
+  GeminiResult _parse(String text) {
+    // Strip markdown fences
+    final clean = text
+        .replaceAll(RegExp(r'```json\s*', caseSensitive: false), '')
+        .replaceAll(RegExp(r'```\s*'), '')
+        .trim();
+
+    Map<String, dynamic>? json;
+
+    // 1. Direct parse
     try {
-      // Strip markdown fences if present
-      final clean = text
-          .replaceAll(RegExp(r'```json\s*', caseSensitive: false), '')
-          .replaceAll(RegExp(r'```\s*'), '')
-          .trim();
+      json = jsonDecode(clean) as Map<String, dynamic>;
+    } catch (_) {}
 
-      // Try direct parse first
-      Map<String, dynamic>? json;
-      try {
-        json = jsonDecode(clean) as Map<String, dynamic>;
-      } catch (_) {
-        // Fallback: find first {...} block via regex
-        final match = RegExp(r'\{[^}]+\}').firstMatch(clean);
-        if (match != null) {
+    // 2. Find first {...} in the text
+    if (json == null) {
+      final match = RegExp(r'\{[^{}]+\}').firstMatch(clean);
+      if (match != null) {
+        try {
           json = jsonDecode(match.group(0)!) as Map<String, dynamic>;
-        }
+        } catch (_) {}
       }
-
-      if (json == null) {
-        return GeminiResult(error: 'Could not parse response: $clean');
-      }
-
-      final cv = json['currentValue'];
-      final rp = json['returnPercent'];
-
-      if (cv == null) {
-        return const GeminiResult(error: 'No value returned by Gemini');
-      }
-
-      return GeminiResult(
-        currentValue: (cv as num).toDouble(),
-        returnPercent: rp != null ? (rp as num).toDouble() : null,
-      );
-    } catch (e) {
-      return GeminiResult(error: 'Parse error: $e');
     }
-  }
 
-  // ── Batch fetch (with 1.5 s gap to stay within free-tier 15 RPM) ─────────
-  Future<Map<int, GeminiResult>> fetchAllValues(
-      List<InvestmentAsset> assets) async {
-    final results = <int, GeminiResult>{};
-    for (final a in assets) {
-      if (a.id == null) continue;
-      results[a.id!] = await fetchValue(a);
-      await Future.delayed(const Duration(milliseconds: 1500));
+    // 3. Regex extract individual numbers
+    if (json == null) {
+      final cvMatch =
+          RegExp(r'"currentValue"\s*:\s*([\d.]+)').firstMatch(clean);
+      final rpMatch =
+          RegExp(r'"returnPercent"\s*:\s*(-?[\d.]+)').firstMatch(clean);
+      if (cvMatch != null) {
+        json = {
+          'currentValue': double.tryParse(cvMatch.group(1)!),
+          'returnPercent': rpMatch != null
+              ? double.tryParse(rpMatch.group(1)!)
+              : null,
+        };
+      }
     }
-    return results;
+
+    if (json == null) {
+      return GeminiResult(error: 'Could not parse: $clean');
+    }
+
+    final cv = json['currentValue'];
+    if (cv == null) return const GeminiResult(error: 'No value in response');
+
+    final cvDouble = cv is num ? cv.toDouble() : double.tryParse('$cv');
+    if (cvDouble == null || cvDouble <= 0) {
+      return const GeminiResult(error: 'Invalid value returned');
+    }
+
+    final rp = json['returnPercent'];
+    final rpDouble = rp is num ? rp.toDouble() : double.tryParse('$rp');
+
+    return GeminiResult(currentValue: cvDouble, returnPercent: rpDouble);
   }
 }
