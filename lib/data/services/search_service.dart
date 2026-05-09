@@ -203,7 +203,7 @@ class SearchService {
     // 1. Mutual funds from mfapi.in (live, free, exact NAV available)
     try {
       final uri = Uri.parse('$_mfBase?q=${Uri.encodeComponent(q)}');
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      final res = await http.get(uri).timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final list = jsonDecode(res.body) as List<dynamic>;
         for (final item in list.take(10)) {

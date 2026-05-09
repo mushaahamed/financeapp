@@ -406,9 +406,12 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
   List<InvestmentSuggestion> _suggestions = [];
   bool _searching = false;
   String _type = 'other';
-  String? _autoFilledFrom; // shows "Auto-filled from search" label
+  String? _autoFilledFrom;
   DateTime? _investedAt;
   bool _saving = false;
+
+  // Debounce + stale-result guard
+  String _lastQuery = '';
 
   @override
   void dispose() {
@@ -418,14 +421,22 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
     super.dispose();
   }
 
-  Future<void> _onSearchChanged(String q) async {
-    if (q.trim().length < 2) {
-      setState(() => _suggestions = []);
+  Future<void> _onSearchChanged(String raw) async {
+    final q = raw.trim();
+    if (q.length < 2) {
+      setState(() { _suggestions = []; _searching = false; });
       return;
     }
+
+    // Debounce: wait 400ms, then check if query is still the same
+    _lastQuery = q;
     setState(() => _searching = true);
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted || _lastQuery != q) return; // user kept typing
+
     final results = await SearchService.search(q);
-    if (mounted) setState(() { _suggestions = results; _searching = false; });
+    if (!mounted || _lastQuery != q) return; // stale result
+    setState(() { _suggestions = results; _searching = false; });
   }
 
   void _selectSuggestion(InvestmentSuggestion s) {
