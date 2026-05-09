@@ -30,7 +30,7 @@ class DatabaseHelper {
         weekly_update_day INTEGER NOT NULL DEFAULT 0,
         weekly_update_time TEXT NOT NULL DEFAULT '09:00',
         auto_update_enabled INTEGER NOT NULL DEFAULT 1,
-        gemini_model TEXT NOT NULL DEFAULT 'gemini-2.0-flash',
+        gemini_model TEXT NOT NULL DEFAULT 'gemini-2.5-flash',
         last_portfolio_update TEXT
       )
     ''');

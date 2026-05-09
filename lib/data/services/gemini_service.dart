@@ -21,43 +21,64 @@ class GeminiService {
   static const _base =
       'https://generativelanguage.googleapis.com/v1beta/models';
 
-  // Very short, direct prompt — free tier refuses long "financial advice" prompts
+  // Fallback model chain — tried in order if configured model fails
+  static const _fallbackModels = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+  ];
+
   String _prompt(InvestmentAsset a) {
     final sym = (a.symbol != null && a.symbol!.isNotEmpty)
         ? ' ticker:${a.symbol}'
         : '';
-    return 'Indian investment tracker needs a rough estimate.\n'
+    return 'Indian investment portfolio tracker needs estimated current value.\n'
         'Asset: "${a.name}"$sym type:${a.type} invested:${a.amountInvested.toStringAsFixed(0)} INR\n'
-        'Based on typical Indian market performance, estimate current value.\n'
-        'Reply with ONLY this JSON (numbers only, no text before or after):\n'
+        'Give rough estimate based on typical Indian market returns.\n'
+        'Reply ONLY with this JSON, no other text:\n'
         '{"currentValue":NNNN,"returnPercent":NN}';
   }
 
+  // ── Public API ─────────────────────────────────────────────────────────────
+
   Future<GeminiResult> fetchValue(InvestmentAsset asset) async {
-    // Try up to 3 times; on 429 back off, on 400 try without JSON mime type
-    for (int attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) await Future.delayed(Duration(seconds: attempt * 4));
+    // Build model list: configured model first, then fallbacks (deduplicated)
+    final models = [
+      model,
+      ..._fallbackModels.where((m) => m != model),
+    ];
 
-      // First attempt: with response_mime_type (forces JSON on supported models)
-      // Second attempt: without (fallback for older endpoints)
-      final useMime = attempt < 2;
-      final result = await _call(asset, useJsonMime: useMime);
+    String lastError = 'Unknown error';
 
-      if (result == null) continue; // 429 — retry
-      return result;
+    for (final m in models) {
+      for (int attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) await Future.delayed(const Duration(seconds: 5));
+
+        final result = await _call(asset, m);
+
+        if (result == null) {
+          // 429 rate-limited — retry once
+          lastError = 'Rate limit hit on $m';
+          continue;
+        }
+
+        if (result.success) return result;
+
+        // Hard error (auth, not found, etc.) — try next model
+        lastError = result.error ?? 'Failed on $m';
+        break;
+      }
     }
-    return const GeminiResult(error: 'No response after 3 attempts. Check API key in Settings.');
+
+    return GeminiResult(error: lastError);
   }
 
-  /// Returns null only on 429 (caller should retry). All other cases return a GeminiResult.
-  Future<GeminiResult?> _call(InvestmentAsset asset, {required bool useJsonMime}) async {
-    final url = Uri.parse('$_base/$model:generateContent?key=$apiKey');
+  // ── Internal call ──────────────────────────────────────────────────────────
 
-    final genConfig = <String, dynamic>{
-      'temperature': 0.1,
-      'maxOutputTokens': 80,
-    };
-    if (useJsonMime) genConfig['response_mime_type'] = 'application/json';
+  /// Returns null on 429 (rate limited — caller retries).
+  Future<GeminiResult?> _call(InvestmentAsset asset, String modelName) async {
+    final url =
+        Uri.parse('$_base/$modelName:generateContent?key=$apiKey');
 
     try {
       final res = await http
@@ -72,22 +93,25 @@ class GeminiService {
                   ]
                 }
               ],
-              'generationConfig': genConfig,
+              'generationConfig': {
+                'temperature': 0.1,
+                'maxOutputTokens': 200,
+                'response_mime_type': 'application/json',
+                // Disable thinking for 2.5-flash — otherwise it uses
+                // hundreds of tokens "thinking" and hits maxOutputTokens
+                'thinkingConfig': {'thinkingBudget': 0},
+              },
             }),
           )
           .timeout(const Duration(seconds: 30));
 
-      if (res.statusCode == 429) return null; // rate-limited, retry
-
-      if (res.statusCode == 400 && useJsonMime) {
-        // This model may not support response_mime_type — caller retries without it
-        return null;
-      }
+      if (res.statusCode == 429) return null; // caller retries
 
       if (res.statusCode != 200) {
         String msg;
         try {
-          msg = (jsonDecode(res.body) as Map)['error']?['message'] as String? ??
+          final body = jsonDecode(res.body) as Map<String, dynamic>;
+          msg = body['error']?['message'] as String? ??
               'HTTP ${res.statusCode}';
         } catch (_) {
           msg = 'HTTP ${res.statusCode}';
@@ -100,22 +124,23 @@ class GeminiService {
           ?['text'] as String?;
 
       if (text == null || text.trim().isEmpty) {
-        // Check for safety block
-        final reason = decoded['candidates']?[0]?['finishReason'] as String?;
+        final reason =
+            decoded['candidates']?[0]?['finishReason'] as String?;
         return GeminiResult(
-            error: reason == 'SAFETY'
-                ? 'Blocked by Gemini safety filter'
+            error: reason != null
+                ? 'Gemini stopped: $reason'
                 : 'Empty response');
       }
 
       return _parse(text.trim());
     } on Exception catch (e) {
-      return GeminiResult(error: 'Network error: $e');
+      return GeminiResult(error: 'Network: $e');
     }
   }
 
+  // ── JSON extraction ────────────────────────────────────────────────────────
+
   GeminiResult _parse(String text) {
-    // Strip markdown fences
     final clean = text
         .replaceAll(RegExp(r'```json\s*', caseSensitive: false), '')
         .replaceAll(RegExp(r'```\s*'), '')
@@ -128,7 +153,7 @@ class GeminiService {
       json = jsonDecode(clean) as Map<String, dynamic>;
     } catch (_) {}
 
-    // 2. Find first {...} in the text
+    // 2. Find first {...} block
     if (json == null) {
       final match = RegExp(r'\{[^{}]+\}').firstMatch(clean);
       if (match != null) {
@@ -138,25 +163,20 @@ class GeminiService {
       }
     }
 
-    // 3. Regex extract individual numbers
+    // 3. Field-by-field regex
     if (json == null) {
-      final cvMatch =
-          RegExp(r'"currentValue"\s*:\s*([\d.]+)').firstMatch(clean);
-      final rpMatch =
-          RegExp(r'"returnPercent"\s*:\s*(-?[\d.]+)').firstMatch(clean);
-      if (cvMatch != null) {
+      final cv = RegExp(r'"currentValue"\s*:\s*([\d.]+)').firstMatch(clean);
+      final rp = RegExp(r'"returnPercent"\s*:\s*(-?[\d.]+)').firstMatch(clean);
+      if (cv != null) {
         json = {
-          'currentValue': double.tryParse(cvMatch.group(1)!),
-          'returnPercent': rpMatch != null
-              ? double.tryParse(rpMatch.group(1)!)
-              : null,
+          'currentValue': double.tryParse(cv.group(1)!),
+          'returnPercent':
+              rp != null ? double.tryParse(rp.group(1)!) : null,
         };
       }
     }
 
-    if (json == null) {
-      return GeminiResult(error: 'Could not parse: $clean');
-    }
+    if (json == null) return GeminiResult(error: 'Could not parse: $clean');
 
     final cv = json['currentValue'];
     if (cv == null) return const GeminiResult(error: 'No value in response');
