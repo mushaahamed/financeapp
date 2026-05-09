@@ -165,6 +165,12 @@ class InvestmentsNotifier
     _ref.read(settingsProvider.notifier).load();
   }
 
+  /// Manually set the current value for an asset (user override).
+  Future<void> updateValue(int id, double value) async {
+    await _repo.updateValue(id, value, DateTime.now());
+    await load();
+  }
+
   /// Adds an investment and returns the new DB id (for auto-refresh after add).
   Future<int?> addAndGetId(InvestmentAsset a) async {
     final id = await _repo.add(a);

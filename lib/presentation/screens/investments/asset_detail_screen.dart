@@ -167,6 +167,15 @@ class AssetDetailScreen extends ConsumerWidget {
                 style: FilledButton.styleFrom(backgroundColor: kGain),
               ),
             ),
+            const Gap(8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _showManualValueSheet(context, ref, asset),
+                icon: const Icon(Icons.edit_rounded, size: 18),
+                label: const Text('Enter current value manually'),
+              ),
+            ),
           ],
         ),
       ),
@@ -224,6 +233,16 @@ class AssetDetailScreen extends ConsumerWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AddMoreSheet(asset: asset, ref: ref),
+    );
+  }
+
+  void _showManualValueSheet(
+      BuildContext ctx, WidgetRef ref, InvestmentAsset asset) {
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ManualValueSheet(asset: asset, ref: ref),
     );
   }
 
@@ -468,6 +487,166 @@ class _AddMoreSheetState extends State<_AddMoreSheet> {
     if (amount == null || amount <= 0) return;
     setState(() => _saving = true);
     await widget.ref.read(investmentsProvider.notifier).addMore(widget.asset.id!, amount);
+    if (mounted) Navigator.pop(context);
+  }
+}
+
+// ── Manual value entry sheet ──────────────────────────────────────────────────
+
+class _ManualValueSheet extends StatefulWidget {
+  final InvestmentAsset asset;
+  final WidgetRef ref;
+  const _ManualValueSheet({required this.asset, required this.ref});
+  @override
+  State<_ManualValueSheet> createState() => _ManualValueSheetState();
+}
+
+class _ManualValueSheetState extends State<_ManualValueSheet> {
+  late final TextEditingController _ctrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill with current value if already set
+    final current = widget.asset.currentValue ?? widget.asset.amountInvested;
+    _ctrl = TextEditingController(
+        text: current.toStringAsFixed(0));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pnl = (double.tryParse(_ctrl.text) ?? widget.asset.amountInvested) -
+        widget.asset.amountInvested;
+
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+            color: kCard,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        padding: const EdgeInsets.all(kPad),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Center(
+            child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: kDivider,
+                    borderRadius: BorderRadius.circular(2))),
+          ),
+          const Gap(16),
+          Row(children: [
+            const Icon(Icons.edit_rounded, size: 18, color: kTextSecondary),
+            const Gap(8),
+            Expanded(
+              child: Text(
+                'Set current value for ${widget.asset.name}',
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ]),
+          const Gap(4),
+          const Text(
+            'Enter the current market value of this investment.',
+            style: TextStyle(fontSize: 13, color: kTextSecondary),
+          ),
+          const Gap(16),
+          TextFormField(
+            controller: _ctrl,
+            autofocus: true,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Current value (₹)',
+              prefixText: '₹  ',
+              hintText: '55000',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const Gap(8),
+          // Live P&L preview
+          Builder(builder: (_) {
+            final enteredValue =
+                double.tryParse(_ctrl.text) ?? widget.asset.amountInvested;
+            final previewPnl = enteredValue - widget.asset.amountInvested;
+            final pct = widget.asset.amountInvested > 0
+                ? (previewPnl / widget.asset.amountInvested * 100)
+                : 0.0;
+            return Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: previewPnl >= 0
+                    ? const Color(0xFFD1FAE5)
+                    : const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('P&L preview',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: previewPnl >= 0
+                              ? const Color(0xFF065F46)
+                              : const Color(0xFF991B1B))),
+                  Text(
+                    '${previewPnl >= 0 ? '+' : ''}₹${previewPnl.toStringAsFixed(0)}  '
+                    '(${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(1)}%)',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: previewPnl >= 0
+                            ? const Color(0xFF065F46)
+                            : const Color(0xFF991B1B)),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const Gap(16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                  : const Text('Save Current Value'),
+            ),
+          ),
+          const Gap(8),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _save() async {
+    final value = double.tryParse(_ctrl.text.trim());
+    if (value == null || value < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a valid amount')));
+      return;
+    }
+    setState(() => _saving = true);
+    await widget.ref
+        .read(investmentsProvider.notifier)
+        .updateValue(widget.asset.id!, value);
     if (mounted) Navigator.pop(context);
   }
 }
