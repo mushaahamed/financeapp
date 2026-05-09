@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import '../../../core/constants.dart';
 import '../../../core/formatters.dart';
+import '../../../data/repositories/expense_repository.dart';
 import '../../../providers/providers.dart';
 
 // ── Pie chart colour palette ──────────────────────────────────────────────────
