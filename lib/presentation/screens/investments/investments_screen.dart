@@ -492,17 +492,20 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
       createdAt: DateTime.now(),
       investedAt: _investedAt,
     );
-    await widget.parentRef.read(investmentsProvider.notifier).add(asset);
+    final newId =
+        await widget.parentRef.read(investmentsProvider.notifier).addAndGetId(asset);
     if (mounted) Navigator.pop(context);
-    // Auto-fetch price
-    final assets = widget.parentRef.read(investmentsProvider).value ?? [];
-    final added = assets.isNotEmpty ? assets.last : null;
-    if (added != null) {
-      widget.parentRef.read(priceRefreshingProvider.notifier).state = true;
-      await widget.parentRef
-          .read(investmentsProvider.notifier)
-          .refreshOne(added);
-      widget.parentRef.read(priceRefreshingProvider.notifier).state = false;
+    // Auto-fetch price for the just-added asset
+    if (newId != null) {
+      final assets = widget.parentRef.read(investmentsProvider).value ?? [];
+      final candidates = assets.where((a) => a.id == newId).toList();
+      if (candidates.isNotEmpty) {
+        widget.parentRef.read(priceRefreshingProvider.notifier).state = true;
+        await widget.parentRef
+            .read(investmentsProvider.notifier)
+            .refreshOne(candidates.first);
+        widget.parentRef.read(priceRefreshingProvider.notifier).state = false;
+      }
     }
   }
 

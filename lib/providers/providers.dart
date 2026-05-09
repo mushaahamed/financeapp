@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../core/constants.dart';
 import '../data/database/database_helper.dart';
 import '../data/models/expense_model.dart';
 import '../data/models/investment_asset_model.dart';
@@ -8,6 +9,7 @@ import '../data/repositories/expense_repository.dart';
 import '../data/repositories/investment_repository.dart';
 import '../data/repositories/settings_repository.dart';
 import '../data/services/gemini_service.dart';
+import '../data/services/nav_service.dart';
 
 // ─── Infrastructure ──────────────────────────────────────────────────────────
 
@@ -163,6 +165,14 @@ class InvestmentsNotifier
     _ref.read(settingsProvider.notifier).load();
   }
 
+  /// Adds an investment and returns the new DB id (for auto-refresh after add).
+  Future<int?> addAndGetId(InvestmentAsset a) async {
+    final id = await _repo.add(a);
+    await load();
+    _ref.read(settingsProvider.notifier).load();
+    return id;
+  }
+
   Future<void> addMore(int id, double amount) async {
     await _repo.addMore(id, amount);
     await load();
@@ -180,13 +190,28 @@ class InvestmentsNotifier
     _ref.read(settingsProvider.notifier).load();
   }
 
-  /// Refresh price for one asset via Gemini. Returns error string or null.
+  /// Refresh price for one asset.
+  /// Uses mfapi.in NAV (exact) if eligible, otherwise Gemini (estimate).
+  /// Returns error string or null on success.
   Future<String?> refreshOne(InvestmentAsset asset) async {
+    if (asset.id == null) return 'Invalid asset';
+
+    // 1. Try exact NAV from mfapi.in
+    if (NavService.isEligible(asset)) {
+      final nav = await NavService.calculate(asset);
+      if (nav != null && nav.success) {
+        await _repo.updateValue(asset.id!, nav.currentValue, DateTime.now());
+        await load();
+        return null;
+      }
+    }
+
+    // 2. Fall back to Gemini estimate
     final key = await _ref.read(settingsRepoProvider).getGeminiApiKey();
     if (key == null || key.isEmpty) return 'Gemini API key not set in Settings';
     final settings = _ref.read(settingsProvider).value;
-    final gemini =
-        GeminiService(apiKey: key, model: settings?.geminiModel ?? 'gemini-2.0-flash');
+    final gemini = GeminiService(
+        apiKey: key, model: settings?.geminiModel ?? kGeminiDefaultModel);
     final result = await gemini.fetchValue(asset);
     if (result.success) {
       await _repo.updateValue(asset.id!, result.currentValue!, DateTime.now());
@@ -198,15 +223,36 @@ class InvestmentsNotifier
 
   /// Refresh all assets. Returns last error string or null if all succeeded.
   Future<String?> refreshAll() async {
-    final key = await _ref.read(settingsRepoProvider).getGeminiApiKey();
-    if (key == null || key.isEmpty) return 'Gemini API key not set in Settings';
-    final settings = _ref.read(settingsProvider).value;
-    final gemini =
-        GeminiService(apiKey: key, model: settings?.geminiModel ?? 'gemini-2.0-flash');
     final assets = state.value ?? [];
     String? lastError;
+
+    // Fetch Gemini key once (only needed for non-mfapi assets)
+    String? geminiKey;
+    GeminiService? gemini;
+
     for (final a in assets) {
       if (a.id == null) continue;
+
+      // Try exact NAV first
+      if (NavService.isEligible(a)) {
+        final nav = await NavService.calculate(a);
+        if (nav != null && nav.success) {
+          await _repo.updateValue(a.id!, nav.currentValue, DateTime.now());
+          continue;
+        }
+      }
+
+      // Fall back to Gemini
+      geminiKey ??= await _ref.read(settingsRepoProvider).getGeminiApiKey();
+      if (geminiKey == null || geminiKey.isEmpty) {
+        lastError = 'Gemini API key not set — non-fund assets skipped';
+        continue;
+      }
+      gemini ??= GeminiService(
+          apiKey: geminiKey,
+          model: _ref.read(settingsProvider).value?.geminiModel ??
+              kGeminiDefaultModel);
+
       final r = await gemini.fetchValue(a);
       if (r.success) {
         await _repo.updateValue(a.id!, r.currentValue!, DateTime.now());
@@ -214,6 +260,7 @@ class InvestmentsNotifier
         lastError = 'Could not fetch ${a.name}: ${r.error}';
       }
     }
+
     await _repo.updateLastPortfolioUpdate(DateTime.now());
     await load();
     _ref.read(settingsProvider.notifier).load();

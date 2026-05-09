@@ -29,22 +29,47 @@ class GeminiService {
   ];
 
   String _prompt(InvestmentAsset a) {
-    final sym = (a.symbol != null && a.symbol!.isNotEmpty)
-        ? ' ticker/code:${a.symbol}'
+    final sym = (a.symbol != null &&
+            a.symbol!.isNotEmpty &&
+            !RegExp(r'^\d+$').hasMatch(a.symbol!))
+        ? ' (ticker: ${a.symbol})'
         : '';
     final since = a.investedAt ?? a.createdAt;
     final months = DateTime.now().difference(since).inDays ~/ 30;
     final holdingStr = months <= 0
-        ? 'recently invested'
+        ? '< 1 month'
         : months < 12
-            ? '$months months ago'
-            : '${(months / 12).toStringAsFixed(1)} years ago';
-    return 'Indian investment portfolio tracker needs estimated current value.\n'
+            ? '$months months'
+            : '${(months / 12).toStringAsFixed(1)} years';
+
+    // Typical CAGR hints so Gemini doesn't fabricate wild numbers
+    final hint = _cagrHint(a.type);
+
+    return 'Indian personal finance app needs an estimated current value for a portfolio asset.\n'
         'Asset: "${a.name}"$sym\n'
-        'Type: ${a.type}, Amount invested: ₹${a.amountInvested.toStringAsFixed(0)}, Invested: $holdingStr\n'
-        'Use typical Indian market returns for this asset class over this holding period.\n'
-        'Reply ONLY with this JSON, no other text:\n'
-        '{"currentValue":NNNN,"returnPercent":NN}';
+        'Type: ${a.type}, Invested: ₹${a.amountInvested.toStringAsFixed(0)}, Holding period: $holdingStr\n'
+        '$hint\n'
+        'Calculate currentValue = invested × (1 + annualRate)^years for the holding period.\n'
+        'Be conservative. Do NOT invent specific fund performance.\n'
+        'Reply ONLY with this JSON, no markdown:\n'
+        '{"currentValue":NNNN,"returnPercent":NN.N}';
+  }
+
+  static String _cagrHint(String type) {
+    switch (type) {
+      case 'physical_gold':
+        return 'Typical gold CAGR in India: 8-12% per year.';
+      case 'gold_etf':
+        return 'Gold ETF tracks gold price. Typical CAGR: 8-12% per year.';
+      case 'silver_etf':
+        return 'Silver ETF CAGR in India: 6-10% per year.';
+      case 'mutual_fund':
+        return 'Equity mutual fund CAGR in India: 12-15% per year. Debt fund: 6-8%.';
+      case 'stocks':
+        return 'Indian large-cap stock CAGR: 12-15% per year on average.';
+      default:
+        return 'Use a conservative 8-10% annual return estimate.';
+    }
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────

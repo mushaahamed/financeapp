@@ -5,6 +5,7 @@ import 'package:gap/gap.dart';
 import '../../../core/constants.dart';
 import '../../../core/formatters.dart';
 import '../../../data/models/investment_asset_model.dart';
+import '../../../data/services/nav_service.dart';
 import '../../../providers/providers.dart';
 import '../../widgets/amount_badge.dart';
 
@@ -123,9 +124,18 @@ class AssetDetailScreen extends ConsumerWidget {
             _infoCard([
               _infoRow('Invested', formatCurrency(asset.amountInvested)),
               _infoRow('Type', kAssetTypeLabels[asset.type] ?? asset.type),
-              if (asset.symbol != null) _infoRow('Symbol', asset.symbol!),
+              if (asset.symbol != null) _infoRow(
+                NavService.isEligible(asset) ? 'Scheme Code' : 'Symbol',
+                asset.symbol!,
+              ),
+              if (asset.investedAt != null)
+                _infoRow('Invested On', formatDate(asset.investedAt!)),
               _infoRow('Added on', formatDate(asset.createdAt)),
               if (asset.notes != null) _infoRow('Notes', asset.notes!),
+              if (NavService.isEligible(asset))
+                _infoRow('Source', 'mfapi.in (exact NAV)')
+              else
+                _infoRow('Source', 'Gemini AI (estimate)'),
             ]),
             const Gap(20),
             SizedBox(
@@ -142,7 +152,9 @@ class AssetDetailScreen extends ConsumerWidget {
               child: FilledButton.icon(
                 onPressed: isRefreshing ? null : () => _refresh(context, ref, asset),
                 icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: const Text('Refresh price via Gemini'),
+                label: Text(NavService.isEligible(asset)
+                    ? 'Refresh via Live NAV (mfapi.in)'
+                    : 'Refresh price via Gemini'),
                 style: FilledButton.styleFrom(backgroundColor: kGain),
               ),
             ),
