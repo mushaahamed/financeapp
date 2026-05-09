@@ -30,7 +30,7 @@ class ExpenseRepository {
     return all.take(limit).toList();
   }
 
-  /// Returns one entry per distinct title (most recent per title), for quick-repeat chips.
+  /// Returns one entry per distinct title (most recent per title) for quick-repeat chips.
   Future<List<Expense>> getRecentDistinct(int limit) async {
     final all = await _db.getAllExpenses();
     final seen = <String>{};
@@ -44,6 +44,23 @@ class ExpenseRepository {
       }
     }
     return result;
+  }
+
+  /// All expenses on a specific calendar date.
+  Future<List<Expense>> getExpensesForDate(DateTime date) async {
+    final start = DateTime(date.year, date.month, date.day);
+    final end = start.add(const Duration(days: 1));
+    return _db.getExpensesBetween(start, end);
+  }
+
+  /// Set of dates (midnight-normalised) that have at least one expense in a month.
+  Future<Set<DateTime>> getDatesWithExpensesInMonth(int year, int month) async {
+    final start = DateTime(year, month, 1);
+    final end = DateTime(year, month + 1, 1);
+    final expenses = await _db.getExpensesBetween(start, end);
+    return expenses
+        .map((e) => DateTime(e.timestamp.year, e.timestamp.month, e.timestamp.day))
+        .toSet();
   }
 
   Future<double> getTotalForToday() async {
