@@ -97,6 +97,10 @@ class GeminiService {
         return 'Real estate appreciation in India: 6-10%/yr. Use 7%. Add rental yield if applicable.';
       case 'ulip':
         return 'ULIP equity avg CAGR after charges: 8-12%/yr. Use 10%.';
+      case 'gold_scheme':
+        return 'Gold saving scheme: tracks gold price. India gold CAGR: 8-12%/yr. Use 10%.';
+      case 'chit_fund':
+        return 'Chit fund: returns vary 8-15%/yr depending on auction discounts. Use 10%.';
       default:
         return 'Use a conservative 8% annual return estimate.';
     }

@@ -169,10 +169,23 @@ class SearchService {
     ('ULIP - Bajaj Allianz', null, 'ulip'),
   ];
 
+  // Gold Saving Schemes & Chit Funds
+  static const _goldSchemes = [
+    ('GRT Gold Saving Scheme', null, 'gold_scheme'),
+    ('Malabar Gold Scheme', null, 'gold_scheme'),
+    ('Tanishq Golden Harvest', null, 'gold_scheme'),
+    ('Joyalukkas Gold Scheme', null, 'gold_scheme'),
+    ('Kalyan Jewellers Gold Plan', null, 'gold_scheme'),
+    ('PNG Gold Saving Scheme', null, 'gold_scheme'),
+    ('Senco Gold Scheme', null, 'gold_scheme'),
+    ('Chit Fund (general)', null, 'chit_fund'),
+    ('KSFE Chitty', null, 'chit_fund'),
+  ];
+
   /// Search mutual funds (live mfapi.in) + all offline instruments.
   /// Returns up to [limit] deduplicated results. Never throws.
   static Future<List<InvestmentSuggestion>> search(String query,
-      {int limit = 8}) async {
+      {int limit = 20}) async {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return [];
 
@@ -193,7 +206,7 @@ class SearchService {
       final res = await http.get(uri).timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final list = jsonDecode(res.body) as List<dynamic>;
-        for (final item in list.take(5)) {
+        for (final item in list.take(10)) {
           final name = item['schemeName'] as String? ?? '';
           if (name.isEmpty) continue;
           add(InvestmentSuggestion(
@@ -249,6 +262,11 @@ class SearchService {
     for (final (name, _, type) in _ulips) {
       if (name.toLowerCase().contains(q)) {
         add(InvestmentSuggestion(name: name, symbol: null, type: type));
+      }
+    }
+    for (final (name, sym, type) in _goldSchemes) {
+      if (name.toLowerCase().contains(q)) {
+        add(InvestmentSuggestion(name: name, symbol: sym, type: type));
       }
     }
 

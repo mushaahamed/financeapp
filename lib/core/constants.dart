@@ -48,6 +48,8 @@ const kAssetTypes = [
   'real_estate',
   // Other
   'ulip',
+  'gold_scheme',
+  'chit_fund',
   'other',
 ];
 
@@ -72,6 +74,8 @@ const kAssetTypeLabels = {
   'physical_silver': 'Physical Silver',
   'real_estate': 'Real Estate',
   'ulip': 'ULIP',
+  'gold_scheme': 'Gold Saving Scheme',
+  'chit_fund': 'Chit Fund',
   'other': 'Other',
 };
 
@@ -104,6 +108,8 @@ const kAssetTypeGroups = {
   ],
   'Other': [
     'ulip',
+    'gold_scheme',
+    'chit_fund',
     'other',
   ],
 };

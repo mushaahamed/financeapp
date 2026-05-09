@@ -400,16 +400,13 @@ class _AddInvestmentSheet extends StatefulWidget {
 }
 
 class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
-  // Step 1 — search
   final _searchCtrl = TextEditingController();
-  List<InvestmentSuggestion> _suggestions = [];
-  bool _searching = false;
-  InvestmentSuggestion? _selected;
-
-  // Step 2 — details
   final _nameCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
+  List<InvestmentSuggestion> _suggestions = [];
+  bool _searching = false;
   String _type = 'other';
+  String? _autoFilledFrom; // shows "Auto-filled from search" label
   DateTime? _investedAt;
   bool _saving = false;
 
@@ -433,21 +430,13 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
 
   void _selectSuggestion(InvestmentSuggestion s) {
     setState(() {
-      _selected = s;
       _nameCtrl.text = s.name;
       _type = s.type;
       _suggestions = [];
+      _searchCtrl.clear();
+      _autoFilledFrom = s.name;
     });
     FocusScope.of(context).unfocus();
-  }
-
-  void _clearSelection() {
-    setState(() {
-      _selected = null;
-      _searchCtrl.clear();
-      _nameCtrl.clear();
-      _suggestions = [];
-    });
   }
 
   Future<void> _pickType(BuildContext context) async {
@@ -472,9 +461,6 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
     if (picked != null) setState(() => _investedAt = picked);
   }
 
-  String _formatDate(DateTime d) =>
-      '${d.day} ${_months[d.month - 1]} ${d.year}';
-
   static const _months = [
     'Jan','Feb','Mar','Apr','May','Jun',
     'Jul','Aug','Sep','Oct','Nov','Dec'
@@ -494,10 +480,10 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
       return;
     }
     setState(() => _saving = true);
+    // Find symbol from search suggestions history — if name matches autoFill, use suggestion symbol
     final asset = InvestmentAsset(
       name: name,
       type: _type,
-      symbol: _selected?.symbol,
       amountInvested: amount,
       createdAt: DateTime.now(),
       investedAt: _investedAt,
@@ -505,7 +491,6 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
     final newId =
         await widget.parentRef.read(investmentsProvider.notifier).addAndGetId(asset);
     if (mounted) Navigator.pop(context);
-    // Auto-fetch price for the just-added asset
     if (newId != null) {
       final assets = widget.parentRef.read(investmentsProvider).value ?? [];
       final candidates = assets.where((a) => a.id == newId).toList();
@@ -545,160 +530,135 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
               const Gap(16),
               const Text('Add Investment',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const Gap(4),
-              const Text(
-                'Search a fund/stock, or type any name below.',
-                style: TextStyle(fontSize: 13, color: kTextSecondary),
-              ),
               const Gap(16),
 
-              // ── Search field ──
-              if (_selected == null) ...[
-                TextField(
-                  controller: _searchCtrl,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.words,
-                  onChanged: _onSearchChanged,
-                  decoration: InputDecoration(
-                    labelText: 'Search fund / stock name',
-                    hintText: 'e.g. HDFC Nifty, Reliance, Gold ETF',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _searching
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2)))
-                        : null,
-                  ),
+              // ── Search bar (populates name below) ──
+              TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                onChanged: _onSearchChanged,
+                decoration: InputDecoration(
+                  labelText: 'Search fund / stock / scheme',
+                  hintText: 'Type to search: HDFC, Gold, GRT, FD…',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _searching
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2)))
+                      : _searchCtrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() => _suggestions = []);
+                              })
+                          : null,
                 ),
-                if (_suggestions.isNotEmpty) ...[
-                  const Gap(6),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: kCard,
-                      border: Border.all(color: kDivider),
-                      borderRadius: BorderRadius.circular(kRadius),
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _suggestions.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1, indent: 16),
-                      itemBuilder: (_, i) {
-                        final s = _suggestions[i];
-                        return ListTile(
-                          dense: true,
-                          title: Text(s.name,
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500)),
-                          subtitle: Text(
-                              '${kAssetTypeLabels[s.type] ?? s.type}'
-                              '${s.symbol != null ? ' · ${s.symbol}' : ''}',
-                              style: const TextStyle(
-                                  fontSize: 11, color: kTextSecondary)),
-                          onTap: () => _selectSuggestion(s),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-                // Allow typing a custom name without selecting a suggestion
-                const Gap(8),
-                const Divider(),
+              ),
+
+              // ── Dropdown results ──
+              if (_suggestions.isNotEmpty) ...[
                 const Gap(4),
-                const Text('— or enter a custom name —',
-                    style:
-                        TextStyle(fontSize: 12, color: kTextSecondary)),
-                const Gap(8),
-                TextFormField(
-                  controller: _nameCtrl,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                      labelText: 'Investment name (custom)',
-                      hintText: 'e.g. PPF, NPS, Physical Gold'),
-                ),
-              ] else ...[
-                // Selected state — show chip + clear button
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                  constraints: const BoxConstraints(maxHeight: 220),
                   decoration: BoxDecoration(
-                    color: kPrimaryLight,
+                    color: kCard,
+                    border: Border.all(color: kDivider),
                     borderRadius: BorderRadius.circular(kRadius),
-                    border: Border.all(color: kPrimary.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check_circle_rounded,
-                          color: kPrimary, size: 18),
-                      const Gap(8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(_selected!.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14)),
-                            Text(
-                                '${kAssetTypeLabels[_selected!.type] ?? _selected!.type}'
-                                '${_selected!.symbol != null ? ' · ${_selected!.symbol}' : ''}',
-                                style: const TextStyle(
-                                    fontSize: 12, color: kTextSecondary)),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        onPressed: _clearSelection,
-                      ),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2)),
                     ],
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _suggestions.length,
+                    separatorBuilder: (_, __) =>
+                        const Divider(height: 1, indent: 16),
+                    itemBuilder: (_, i) {
+                      final s = _suggestions[i];
+                      return ListTile(
+                        dense: true,
+                        leading: _typeIcon(s.type),
+                        title: Text(s.name,
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500)),
+                        subtitle: Text(
+                            kAssetTypeLabels[s.type] ?? s.type,
+                            style: const TextStyle(
+                                fontSize: 11, color: kTextSecondary)),
+                        onTap: () => _selectSuggestion(s),
+                      );
+                    },
                   ),
                 ),
               ],
 
               const Gap(12),
 
-              // ── Type picker (only shown for custom entry) ──
-              if (_selected == null) ...[
-                GestureDetector(
-                  onTap: () => _pickType(context),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 14),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: kDivider),
-                      borderRadius: BorderRadius.circular(kRadius),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.category_rounded,
-                            size: 18, color: kTextSecondary),
-                        const Gap(10),
-                        Expanded(
-                          child: Text(
-                            kAssetTypeLabels[_type] ?? _type,
-                            style: const TextStyle(fontSize: 14),
-                          ),
+              // ── Name field (always editable) ──
+              TextFormField(
+                controller: _nameCtrl,
+                textCapitalization: TextCapitalization.words,
+                onChanged: (_) {
+                  if (_autoFilledFrom != null &&
+                      _nameCtrl.text != _autoFilledFrom) {
+                    setState(() => _autoFilledFrom = null);
+                  }
+                },
+                decoration: InputDecoration(
+                  labelText: 'Investment name',
+                  hintText: 'e.g. HDFC Nifty 50, GRT Gold, PPF',
+                  helperText: _autoFilledFrom != null
+                      ? 'Auto-filled — edit freely'
+                      : null,
+                  helperStyle: const TextStyle(
+                      color: kPrimary, fontSize: 11),
+                ),
+              ),
+
+              const Gap(12),
+
+              // ── Type picker ──
+              GestureDetector(
+                onTap: () => _pickType(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 14),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: kDivider),
+                    borderRadius: BorderRadius.circular(kRadius),
+                  ),
+                  child: Row(
+                    children: [
+                      _typeIcon(_type),
+                      const Gap(10),
+                      Expanded(
+                        child: Text(
+                          kAssetTypeLabels[_type] ?? _type,
+                          style: const TextStyle(fontSize: 14),
                         ),
-                        const Icon(Icons.arrow_drop_down,
-                            color: kTextSecondary),
-                      ],
-                    ),
+                      ),
+                      const Icon(Icons.arrow_drop_down,
+                          color: kTextSecondary),
+                    ],
                   ),
                 ),
-                const Gap(12),
-              ],
+              ),
+
+              const Gap(12),
 
               // ── Amount ──
               TextFormField(
                 controller: _amountCtrl,
-                autofocus: _selected != null,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [
@@ -730,8 +690,8 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
                       Expanded(
                         child: Text(
                           _investedAt != null
-                              ? 'Invested on ${_formatDate(_investedAt!)}'
-                              : 'Investment date (optional)',
+                              ? 'Invested on ${_investedAt!.day} ${_months[_investedAt!.month - 1]} ${_investedAt!.year}'
+                              : 'Investment date (optional — for exact P&L)',
                           style: TextStyle(
                               fontSize: 14,
                               color: _investedAt != null
@@ -748,11 +708,6 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
                     ],
                   ),
                 ),
-              ),
-              const Gap(4),
-              const Text(
-                'Set this if you invested before using this app — helps Gemini give more accurate estimates.',
-                style: TextStyle(fontSize: 11, color: kTextSecondary),
               ),
 
               const Gap(20),
@@ -775,6 +730,35 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
         ),
       ),
     );
+  }
+
+  Widget _typeIcon(String type) {
+    final icons = <String, IconData>{
+      'mutual_fund': Icons.account_balance_rounded,
+      'stocks': Icons.trending_up_rounded,
+      'us_stocks': Icons.public_rounded,
+      'gold_etf': Icons.bar_chart_rounded,
+      'silver_etf': Icons.bar_chart_rounded,
+      'reit': Icons.apartment_rounded,
+      'crypto': Icons.currency_bitcoin_rounded,
+      'fixed_deposit': Icons.lock_rounded,
+      'recurring_deposit': Icons.repeat_rounded,
+      'ppf': Icons.account_balance_rounded,
+      'epf': Icons.work_rounded,
+      'nps': Icons.elderly_rounded,
+      'nsc': Icons.savings_rounded,
+      'sgb': Icons.monetization_on_rounded,
+      'bonds': Icons.receipt_long_rounded,
+      'post_office': Icons.mail_rounded,
+      'physical_gold': Icons.diamond_rounded,
+      'physical_silver': Icons.circle_rounded,
+      'real_estate': Icons.home_rounded,
+      'ulip': Icons.security_rounded,
+      'gold_scheme': Icons.diamond_rounded,
+      'chit_fund': Icons.groups_rounded,
+    };
+    return Icon(icons[type] ?? Icons.savings_rounded,
+        size: 18, color: kTextSecondary);
   }
 }
 

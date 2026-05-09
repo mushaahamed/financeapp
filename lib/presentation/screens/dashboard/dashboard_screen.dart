@@ -10,6 +10,27 @@ import '../settings/settings_screen.dart';
 import '../../widgets/stat_card.dart';
 import '../../widgets/section_header.dart';
 
+// Category colour/icon for quick-repeat tiles (mirrors expenses_screen cats)
+class _QuickCat {
+  final IconData icon;
+  final Color color;
+  const _QuickCat(this.icon, this.color);
+}
+
+const _quickCats = <String, _QuickCat>{
+  'Food & Dining':  _QuickCat(Icons.restaurant_rounded,     Color(0xFFEF4444)),
+  'Shopping':       _QuickCat(Icons.shopping_bag_rounded,   Color(0xFFF97316)),
+  'Transport':      _QuickCat(Icons.directions_bus_rounded, Color(0xFF3B82F6)),
+  'Health':         _QuickCat(Icons.favorite_rounded,       Color(0xFFEC4899)),
+  'Entertainment':  _QuickCat(Icons.movie_rounded,          Color(0xFF8B5CF6)),
+  'Bills':          _QuickCat(Icons.receipt_long_rounded,   Color(0xFF06B6D4)),
+  'Friends':        _QuickCat(Icons.people_rounded,         Color(0xFF10B981)),
+  'Other':          _QuickCat(Icons.payments_rounded,       Color(0xFF64748B)),
+};
+
+_QuickCat _catForDash(String? cat) =>
+    _quickCats[cat] ?? const _QuickCat(Icons.payments_rounded, Color(0xFF64748B));
+
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
   @override
@@ -160,33 +181,44 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: kPad, vertical: 4),
                   child: Row(
                     children: [
-                      const Text('₹', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: kTextSecondary)),
+                      const Text('₹',
+                          style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              color: kTextSecondary)),
                       const Gap(8),
                       Expanded(
                         child: TextField(
                           controller: _cashCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
+                          ],
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _saveCash(),
+                          style: const TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.w700),
                           decoration: const InputDecoration(
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
                             fillColor: Colors.transparent,
-                            hintText: '0.00',
+                            hintText: '0',
                           ),
                         ),
                       ),
-                      FilledButton(
-                        onPressed: _updatingCash ? null : _saveCash,
-                        style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            textStyle: const TextStyle(fontSize: 13)),
-                        child: _updatingCash
-                            ? const SizedBox(width: 16, height: 16,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('Save'),
-                      ),
+                      _updatingCash
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : IconButton(
+                              icon: const Icon(Icons.check_circle_rounded,
+                                  color: kGain),
+                              tooltip: 'Save',
+                              onPressed: _saveCash,
+                            ),
                     ],
                   ),
                 ),
@@ -247,31 +279,62 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Gap(12),
-                              const Text('REPEAT',
+                              const Divider(height: 1),
+                              const Gap(10),
+                              const Text('RECENT',
                                   style: TextStyle(
                                       fontSize: 10,
                                       color: kTextSecondary,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: 0.5)),
-                              const Gap(6),
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.8)),
+                              const Gap(8),
                               SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
                                 child: Row(
                                   children: summary.quickRepeat.map((e) {
-                                    return Padding(
-                                      padding: const EdgeInsets.only(right: 8),
-                                      child: ActionChip(
-                                        label: Text(
-                                            '${e.title}  ₹${e.amount.toStringAsFixed(0)}'),
-                                        onPressed: () => _addExpense(
-                                            title: e.title, amount: e.amount),
-                                        backgroundColor: kPrimaryLight,
-                                        labelStyle: const TextStyle(
-                                            color: kPrimary,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600),
-                                        side: const BorderSide(color: kPrimary, width: 0.8),
-                                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                                    final cat = _catForDash(e.category);
+                                    return GestureDetector(
+                                      onTap: () => _addExpense(
+                                          title: e.title, amount: e.amount),
+                                      child: Container(
+                                        margin: const EdgeInsets.only(right: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: kBackground,
+                                          border: Border.all(color: kDivider),
+                                          borderRadius: BorderRadius.circular(kRadius),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 28,
+                                              height: 28,
+                                              decoration: BoxDecoration(
+                                                color: cat.color.withOpacity(0.12),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(cat.icon,
+                                                  size: 14, color: cat.color),
+                                            ),
+                                            const Gap(8),
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(e.title,
+                                                    style: const TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.w600)),
+                                                Text('₹${e.amount.toStringAsFixed(0)}',
+                                                    style: const TextStyle(
+                                                        fontSize: 11,
+                                                        color: kTextSecondary)),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     );
                                   }).toList(),
