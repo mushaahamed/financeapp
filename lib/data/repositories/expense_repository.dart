@@ -14,11 +14,10 @@ class ExpenseRepository {
         return _db.getAllExpenses();
       case ExpenseFilter.today:
         final start = DateTime(now.year, now.month, now.day);
-        final end = start.add(const Duration(days: 1));
-        return _db.getExpensesBetween(start, end);
+        return _db.getExpensesBetween(start, start.add(const Duration(days: 1)));
       case ExpenseFilter.thisWeek:
-        final monday = now.subtract(Duration(days: now.weekday - 1));
-        final start = DateTime(monday.year, monday.month, monday.day);
+        final mon = now.subtract(Duration(days: now.weekday - 1));
+        final start = DateTime(mon.year, mon.month, mon.day);
         return _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
       case ExpenseFilter.thisMonth:
         final start = DateTime(now.year, now.month, 1);
@@ -31,44 +30,59 @@ class ExpenseRepository {
     return all.take(limit).toList();
   }
 
+  /// Returns one entry per distinct title (most recent per title), for quick-repeat chips.
+  Future<List<Expense>> getRecentDistinct(int limit) async {
+    final all = await _db.getAllExpenses();
+    final seen = <String>{};
+    final result = <Expense>[];
+    for (final e in all) {
+      final key = e.title.toLowerCase().trim();
+      if (!seen.contains(key)) {
+        seen.add(key);
+        result.add(e);
+        if (result.length >= limit) break;
+      }
+    }
+    return result;
+  }
+
   Future<double> getTotalForToday() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
-    final end = start.add(const Duration(days: 1));
-    final list = await _db.getExpensesBetween(start, end);
+    final list =
+        await _db.getExpensesBetween(start, start.add(const Duration(days: 1)));
     return list.fold<double>(0.0, (sum, e) => sum + e.amount);
   }
 
   Future<double> getTotalForWeek() async {
     final now = DateTime.now();
-    final monday = now.subtract(Duration(days: now.weekday - 1));
-    final start = DateTime(monday.year, monday.month, monday.day);
-    final list = await _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
+    final mon = now.subtract(Duration(days: now.weekday - 1));
+    final start = DateTime(mon.year, mon.month, mon.day);
+    final list =
+        await _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
     return list.fold<double>(0.0, (sum, e) => sum + e.amount);
   }
 
   Future<double> getTotalForMonth() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, 1);
-    final list = await _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
+    final list =
+        await _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
     return list.fold<double>(0.0, (sum, e) => sum + e.amount);
   }
 
-  /// Inserts the expense and adjusts cash. Returns the new id.
   Future<int> addExpense(Expense e) async {
     final id = await _db.insertExpense(e);
     await _db.adjustCash(-e.amount);
     return id;
   }
 
-  /// Updates expense; adjusts cash by the amount difference.
   Future<void> updateExpense(Expense updated, double oldAmount) async {
     await _db.updateExpense(updated);
     final diff = updated.amount - oldAmount;
     if (diff != 0) await _db.adjustCash(-diff);
   }
 
-  /// Deletes expense and refunds amount to cash.
   Future<void> deleteExpense(Expense e) async {
     await _db.deleteExpense(e.id!);
     await _db.adjustCash(e.amount);

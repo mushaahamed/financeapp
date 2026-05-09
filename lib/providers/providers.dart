@@ -3,7 +3,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../data/database/database_helper.dart';
 import '../data/models/expense_model.dart';
 import '../data/models/investment_asset_model.dart';
-import '../data/models/investment_transaction_model.dart';
 import '../data/models/user_settings_model.dart';
 import '../data/repositories/expense_repository.dart';
 import '../data/repositories/investment_repository.dart';
@@ -14,8 +13,8 @@ import '../data/services/gemini_service.dart';
 
 final dbProvider = Provider<DatabaseHelper>((ref) => DatabaseHelper.instance);
 
-final secureStorageProvider = Provider<FlutterSecureStorage>(
-    (ref) => const FlutterSecureStorage());
+final secureStorageProvider =
+    Provider<FlutterSecureStorage>((ref) => const FlutterSecureStorage());
 
 // ─── Repositories ────────────────────────────────────────────────────────────
 
@@ -32,7 +31,6 @@ final investmentRepoProvider = Provider<InvestmentRepository>(
 
 class SettingsNotifier extends StateNotifier<AsyncValue<UserSettings?>> {
   final SettingsRepository _repo;
-
   SettingsNotifier(this._repo) : super(const AsyncValue.loading()) {
     load();
   }
@@ -93,6 +91,7 @@ class ExpensesNotifier extends StateNotifier<AsyncValue<List<Expense>>> {
     await _repo.addExpense(e);
     await load();
     _ref.read(settingsProvider.notifier).load();
+    _ref.invalidate(dashboardSummaryProvider);
   }
 
   Future<void> update(Expense updated, double oldAmount) async {
@@ -112,110 +111,108 @@ final expensesProvider =
     StateNotifierProvider<ExpensesNotifier, AsyncValue<List<Expense>>>(
         (ref) => ExpensesNotifier(ref.read(expenseRepoProvider), ref));
 
-// ─── Dashboard summary data ──────────────────────────────────────────────────
+// ─── Dashboard summary ────────────────────────────────────────────────────────
 
 final dashboardSummaryProvider = FutureProvider<DashboardSummary>((ref) async {
   final repo = ref.read(expenseRepoProvider);
   final today = await repo.getTotalForToday();
   final week = await repo.getTotalForWeek();
   final recent = await repo.getRecentExpenses(5);
-  return DashboardSummary(todayTotal: today, weekTotal: week, recent: recent);
+  final quickRepeat = await repo.getRecentDistinct(5);
+  return DashboardSummary(
+      todayTotal: today,
+      weekTotal: week,
+      recent: recent,
+      quickRepeat: quickRepeat);
 });
 
 class DashboardSummary {
   final double todayTotal;
   final double weekTotal;
   final List<Expense> recent;
+  final List<Expense> quickRepeat; // distinct recent for repeat chips
+
   const DashboardSummary({
     required this.todayTotal,
     required this.weekTotal,
     required this.recent,
+    required this.quickRepeat,
   });
 }
 
 // ─── Investments ─────────────────────────────────────────────────────────────
 
-class InvestmentAssetsNotifier
+class InvestmentsNotifier
     extends StateNotifier<AsyncValue<List<InvestmentAsset>>> {
   final InvestmentRepository _repo;
   final Ref _ref;
 
-  InvestmentAssetsNotifier(this._repo, this._ref)
+  InvestmentsNotifier(this._repo, this._ref)
       : super(const AsyncValue.loading()) {
     load();
   }
 
   Future<void> load() async {
     state = const AsyncValue.loading();
-    state = await AsyncValue.guard(_repo.getAllAssets);
+    state = await AsyncValue.guard(_repo.getAll);
   }
 
-  Future<int> addAsset(InvestmentAsset a) async {
-    final id = await _repo.addAsset(a);
-    await load();
-    return id;
-  }
-
-  Future<void> updateAsset(InvestmentAsset a) async {
-    await _repo.updateAsset(a);
-    await load();
-  }
-
-  Future<void> deleteAsset(int id) async {
-    await _repo.deleteAsset(id);
+  Future<void> add(InvestmentAsset a) async {
+    await _repo.add(a);
     await load();
     _ref.read(settingsProvider.notifier).load();
   }
 
-  Future<void> addTransaction(InvestmentTransaction tx) async {
-    await _repo.addTransaction(tx);
+  Future<void> addMore(int id, double amount) async {
+    await _repo.addMore(id, amount);
     await load();
     _ref.read(settingsProvider.notifier).load();
   }
 
-  Future<void> deleteTransaction(InvestmentTransaction tx) async {
-    await _repo.deleteTransaction(tx);
+  Future<void> update(InvestmentAsset a) async {
+    await _repo.update(a);
+    await load();
+  }
+
+  Future<void> delete(int id, double amountInvested) async {
+    await _repo.delete(id, amountInvested);
     await load();
     _ref.read(settingsProvider.notifier).load();
   }
 
-  Future<String?> refreshPrice(InvestmentAsset asset) async {
-    final key =
-        await _ref.read(settingsRepoProvider).getGeminiApiKey();
-    if (key == null || key.isEmpty) return 'Gemini API key not set';
-
+  /// Refresh price for one asset via Gemini. Returns error string or null.
+  Future<String?> refreshOne(InvestmentAsset asset) async {
+    final key = await _ref.read(settingsRepoProvider).getGeminiApiKey();
+    if (key == null || key.isEmpty) return 'Gemini API key not set in Settings';
     final settings = _ref.read(settingsProvider).value;
-    final model = settings?.geminiModel ?? 'gemini-2.0-flash';
-    final gemini = GeminiService(apiKey: key, model: model);
-    final result = await gemini.fetchPrice(asset);
+    final gemini =
+        GeminiService(apiKey: key, model: settings?.geminiModel ?? 'gemini-2.0-flash');
+    final result = await gemini.fetchValue(asset);
     if (result.success) {
-      await _repo.updateAssetPrice(asset.id!, result.price!, DateTime.now());
+      await _repo.updateValue(asset.id!, result.currentValue!, DateTime.now());
       await load();
       return null;
     }
-    return result.error ?? 'Unknown error';
+    return result.error;
   }
 
-  Future<String?> refreshAllPrices() async {
-    final key =
-        await _ref.read(settingsRepoProvider).getGeminiApiKey();
-    if (key == null || key.isEmpty) return 'Gemini API key not set';
-
+  /// Refresh all assets. Returns last error string or null if all succeeded.
+  Future<String?> refreshAll() async {
+    final key = await _ref.read(settingsRepoProvider).getGeminiApiKey();
+    if (key == null || key.isEmpty) return 'Gemini API key not set in Settings';
     final settings = _ref.read(settingsProvider).value;
-    final model = settings?.geminiModel ?? 'gemini-2.0-flash';
-    final gemini = GeminiService(apiKey: key, model: model);
-
+    final gemini =
+        GeminiService(apiKey: key, model: settings?.geminiModel ?? 'gemini-2.0-flash');
     final assets = state.value ?? [];
     String? lastError;
-    for (final asset in assets) {
-      if (asset.id == null) continue;
-      final result = await gemini.fetchPrice(asset);
-      if (result.success) {
-        await _repo.updateAssetPrice(asset.id!, result.price!, DateTime.now());
+    for (final a in assets) {
+      if (a.id == null) continue;
+      final r = await gemini.fetchValue(a);
+      if (r.success) {
+        await _repo.updateValue(a.id!, r.currentValue!, DateTime.now());
       } else {
-        lastError = 'Could not fetch price for ${asset.name}: ${result.error}';
+        lastError = 'Could not fetch ${a.name}: ${r.error}';
       }
-      await Future.delayed(const Duration(milliseconds: 1200));
     }
     await _repo.updateLastPortfolioUpdate(DateTime.now());
     await load();
@@ -224,66 +221,81 @@ class InvestmentAssetsNotifier
   }
 }
 
-final investmentAssetsProvider = StateNotifierProvider<InvestmentAssetsNotifier,
+final investmentsProvider = StateNotifierProvider<InvestmentsNotifier,
     AsyncValue<List<InvestmentAsset>>>(
-  (ref) => InvestmentAssetsNotifier(ref.read(investmentRepoProvider), ref),
+  (ref) => InvestmentsNotifier(ref.read(investmentRepoProvider), ref),
 );
-
-// ─── Transactions for a specific asset ───────────────────────────────────────
-
-final transactionsProvider = FutureProvider.family<List<InvestmentTransaction>,
-    int>((ref, assetId) {
-  return ref.read(investmentRepoProvider).getTransactions(assetId);
-});
 
 // ─── Portfolio summary ────────────────────────────────────────────────────────
 
-final portfolioSummaryProvider =
-    Provider<PortfolioSummary>((ref) {
-  final assets = ref.watch(investmentAssetsProvider).value ?? [];
-  double totalInvested = 0;
-  double portfolioValue = 0;
-  bool hasMissingPrices = false;
+final portfolioSummaryProvider = Provider<PortfolioSummary>((ref) {
+  final assets = ref.watch(investmentsProvider).value ?? [];
+  double invested = 0;
+  double current = 0;
+  bool hasMissing = false;
 
   for (final a in assets) {
-    totalInvested += a.totalInvested;
-    if (a.lastKnownPricePerUnit != null) {
-      portfolioValue += a.unitsHeld * a.lastKnownPricePerUnit!;
-    } else {
-      portfolioValue += a.totalInvested;
-      if (a.unitsHeld > 0) hasMissingPrices = true;
-    }
+    invested += a.amountInvested;
+    current += a.effectiveValue;
+    if (a.currentValue == null && a.amountInvested > 0) hasMissing = true;
   }
 
-  final pnl = portfolioValue - totalInvested;
-  final returnPct =
-      totalInvested > 0 ? (pnl / totalInvested) * 100 : 0.0;
+  final pnl = current - invested;
+  final pct = invested > 0 ? (pnl / invested) * 100 : 0.0;
 
   return PortfolioSummary(
-    totalInvested: totalInvested,
-    portfolioValue: portfolioValue,
+    totalInvested: invested,
+    currentValue: current,
     pnl: pnl,
-    returnPercent: returnPct,
-    hasMissingPrices: hasMissingPrices,
+    returnPercent: pct,
+    hasMissing: hasMissing,
+    assets: assets,
   );
 });
 
 class PortfolioSummary {
   final double totalInvested;
-  final double portfolioValue;
+  final double currentValue;
   final double pnl;
   final double returnPercent;
-  final bool hasMissingPrices;
+  final bool hasMissing;
+  final List<InvestmentAsset> assets;
 
   const PortfolioSummary({
     required this.totalInvested,
-    required this.portfolioValue,
+    required this.currentValue,
     required this.pnl,
     required this.returnPercent,
-    required this.hasMissingPrices,
+    required this.hasMissing,
+    required this.assets,
   });
 }
 
-// ─── Price refresh loading state ─────────────────────────────────────────────
+// ─── Expense category summary (for pie chart) ─────────────────────────────────
+
+final expenseCategoryProvider =
+    FutureProvider.family<List<CategoryTotal>, ExpenseFilter>(
+        (ref, filter) async {
+  final repo = ref.read(expenseRepoProvider);
+  final expenses = await repo.getExpenses(filter);
+  final map = <String, double>{};
+  for (final e in expenses) {
+    final cat = e.category ?? 'Other';
+    map[cat] = (map[cat] ?? 0) + e.amount;
+  }
+  final list = map.entries
+      .map((e) => CategoryTotal(name: e.key, total: e.value))
+      .toList()
+    ..sort((a, b) => b.total.compareTo(a.total));
+  return list;
+});
+
+class CategoryTotal {
+  final String name;
+  final double total;
+  const CategoryTotal({required this.name, required this.total});
+}
+
+// ─── Price refresh loading ────────────────────────────────────────────────────
 
 final priceRefreshingProvider = StateProvider<bool>((ref) => false);

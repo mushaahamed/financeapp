@@ -1,47 +1,37 @@
 import '../database/database_helper.dart';
 import '../models/investment_asset_model.dart';
-import '../models/investment_transaction_model.dart';
 
 class InvestmentRepository {
   final DatabaseHelper _db;
   InvestmentRepository(this._db);
 
-  Future<List<InvestmentAsset>> getAllAssets() => _db.getAllAssets();
+  Future<List<InvestmentAsset>> getAll() => _db.getAllInvestments();
 
-  Future<InvestmentAsset?> getAsset(int id) => _db.getAssetById(id);
+  Future<InvestmentAsset?> getById(int id) => _db.getInvestmentById(id);
 
-  Future<int> addAsset(InvestmentAsset a) => _db.insertAsset(a);
-
-  Future<void> updateAsset(InvestmentAsset a) => _db.updateAsset(a);
-
-  Future<void> deleteAsset(int id) => _db.deleteAsset(id);
-
-  Future<List<InvestmentTransaction>> getTransactions(int assetId) =>
-      _db.getTransactionsForAsset(assetId);
-
-  /// Adds a buy/sell transaction, recalculates asset stats,
-  /// and adjusts cash (buy → deduct, sell → add).
-  Future<void> addTransaction(InvestmentTransaction tx) async {
-    await _db.insertTransactionAndRecalculate(tx);
-    final cashDelta = tx.type == 'buy'
-        ? -(tx.units * tx.pricePerUnit)
-        : tx.units * tx.pricePerUnit;
-    await _db.adjustCash(cashDelta);
+  /// Creates a new investment and deducts from cash.
+  Future<int> add(InvestmentAsset a) async {
+    final id = await _db.insertInvestment(a);
+    await _db.adjustCash(-a.amountInvested);
+    return id;
   }
 
-  /// Deletes a transaction, recalculates, and reverses cash impact.
-  Future<void> deleteTransaction(InvestmentTransaction tx) async {
-    await _db.deleteTransactionAndRecalculate(tx.id!, tx.assetId);
-    // reverse the original cash impact
-    final cashDelta = tx.type == 'buy'
-        ? tx.units * tx.pricePerUnit
-        : -(tx.units * tx.pricePerUnit);
-    await _db.adjustCash(cashDelta);
+  /// Adds more money to an existing investment and deducts from cash.
+  Future<void> addMore(int id, double amount) async {
+    await _db.addToInvestment(id, amount);
+    await _db.adjustCash(-amount);
   }
 
-  Future<void> updateAssetPrice(
-      int assetId, double price, DateTime updatedAt) =>
-      _db.updateAssetPrice(assetId, price, updatedAt);
+  Future<void> update(InvestmentAsset a) => _db.updateInvestment(a);
+
+  /// Deletes investment and refunds invested amount to cash.
+  Future<void> delete(int id, double amountInvested) async {
+    await _db.deleteInvestment(id);
+    await _db.adjustCash(amountInvested);
+  }
+
+  Future<void> updateValue(int id, double value, DateTime at) =>
+      _db.updateInvestmentValue(id, value, at);
 
   Future<void> updateLastPortfolioUpdate(DateTime dt) =>
       _db.updateLastPortfolioUpdate(dt);

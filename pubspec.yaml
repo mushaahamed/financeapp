@@ -28,6 +28,9 @@ dependencies:
   # Background weekly price update
   workmanager: ^0.5.2
 
+  # Charts
+  fl_chart: ^0.69.0
+
   # Fonts
   google_fonts: ^6.2.1
 

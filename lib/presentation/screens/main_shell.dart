@@ -4,6 +4,7 @@ import '../../core/constants.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'expenses/expenses_screen.dart';
 import 'investments/investments_screen.dart';
+import 'reports/reports_screen.dart';
 
 final _tabIndexProvider = StateProvider<int>((ref) => 0);
 
@@ -14,6 +15,7 @@ class MainShell extends ConsumerWidget {
     DashboardScreen(),
     ExpensesScreen(),
     InvestmentsScreen(),
+    ReportsScreen(),
   ];
 
   @override
@@ -28,6 +30,7 @@ class MainShell extends ConsumerWidget {
         child: BottomNavigationBar(
           currentIndex: idx,
           onTap: (i) => ref.read(_tabIndexProvider.notifier).state = i,
+          type: BottomNavigationBarType.fixed,
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
@@ -43,6 +46,11 @@ class MainShell extends ConsumerWidget {
               icon: Icon(Icons.show_chart_outlined),
               activeIcon: Icon(Icons.show_chart_rounded),
               label: 'Investments',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.pie_chart_outline_rounded),
+              activeIcon: Icon(Icons.pie_chart_rounded),
+              label: 'Reports',
             ),
           ],
         ),

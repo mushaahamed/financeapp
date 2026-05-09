@@ -3,11 +3,13 @@ import 'package:http/http.dart' as http;
 import '../models/investment_asset_model.dart';
 import '../../core/constants.dart';
 
-class GeminiPriceResult {
-  final double? price;
+class GeminiResult {
+  final double? currentValue;
+  final double? returnPercent;
   final String? error;
-  const GeminiPriceResult({this.price, this.error});
-  bool get success => price != null;
+
+  const GeminiResult({this.currentValue, this.returnPercent, this.error});
+  bool get success => currentValue != null;
 }
 
 class GeminiService {
@@ -16,82 +18,94 @@ class GeminiService {
 
   GeminiService({required this.apiKey, required this.model});
 
-  static const _baseUrl =
+  static const _base =
       'https://generativelanguage.googleapis.com/v1beta/models';
 
-  String _buildPrompt(InvestmentAsset asset) {
-    final symbolHint =
-        (asset.symbol != null && asset.symbol!.isNotEmpty)
-            ? ', symbol/identifier: ${asset.symbol}'
-            : '';
-    return '''You are a financial data assistant. Return ONLY valid JSON with no markdown.
-For the asset below, provide the current approximate market price per unit in ${asset.currency}.
-Asset: name="${asset.name}", type="${kAssetTypeLabels[asset.type] ?? asset.type}"$symbolHint.
-Output format (JSON only, nothing else): {"price": <number>, "currency": "${asset.currency}"}
-If you cannot determine the price, output: {"price": null, "currency": "${asset.currency}", "error": "reason"}''';
+  String _prompt(InvestmentAsset a) {
+    final sym = (a.symbol != null && a.symbol!.isNotEmpty)
+        ? ', symbol: ${a.symbol}'
+        : '';
+    return '''You are a financial data assistant for Indian markets.
+Estimate the current market value of this investment in ${a.currency}.
+
+Investment details:
+- Name: ${a.name}
+- Type: ${kAssetTypeLabels[a.type] ?? a.type}$sym
+- Amount originally invested: ${a.amountInvested} ${a.currency}
+
+Based on current market conditions, estimate:
+1. Current value of this investment
+2. Approximate % return (positive = gain, negative = loss)
+
+Return ONLY valid JSON, nothing else:
+{"currentValue": <number>, "returnPercent": <number>}
+
+If you cannot estimate, return:
+{"currentValue": null, "returnPercent": null}''';
   }
 
-  Future<GeminiPriceResult> fetchPrice(InvestmentAsset asset) async {
-    final url = Uri.parse('$_baseUrl/$model:generateContent?key=$apiKey');
-    final body = jsonEncode({
-      'contents': [
-        {
-          'parts': [
-            {'text': _buildPrompt(asset)}
-          ]
-        }
-      ],
-      'generationConfig': {
-        'temperature': 0.1,
-        'maxOutputTokens': 256,
-      }
-    });
-
+  Future<GeminiResult> fetchValue(InvestmentAsset asset) async {
+    final url = Uri.parse('$_base/$model:generateContent?key=$apiKey');
     try {
-      final response = await http
-          .post(url, headers: {'Content-Type': 'application/json'}, body: body)
+      final res = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'contents': [
+                {
+                  'parts': [
+                    {'text': _prompt(asset)}
+                  ]
+                }
+              ],
+              'generationConfig': {
+                'temperature': 0.1,
+                'maxOutputTokens': 128,
+              }
+            }),
+          )
           .timeout(const Duration(seconds: 20));
 
-      if (response.statusCode != 200) {
-        final decoded = jsonDecode(response.body);
-        final msg = decoded['error']?['message'] ?? 'HTTP ${response.statusCode}';
-        return GeminiPriceResult(error: msg);
+      if (res.statusCode != 200) {
+        final msg = jsonDecode(res.body)['error']?['message'] ??
+            'HTTP ${res.statusCode}';
+        return GeminiResult(error: msg);
       }
 
-      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      final text = decoded['candidates']?[0]?['content']?['parts']?[0]?['text']
-          as String?;
-      if (text == null) {
-        return const GeminiPriceResult(error: 'Empty response from Gemini');
-      }
+      final decoded = jsonDecode(res.body) as Map<String, dynamic>;
+      final text = decoded['candidates']?[0]?['content']?['parts']?[0]
+          ?['text'] as String?;
+      if (text == null) return const GeminiResult(error: 'Empty response');
 
-      // Strip possible markdown code fences
-      final cleaned = text
+      final clean = text
           .replaceAll(RegExp(r'```json\s*'), '')
           .replaceAll(RegExp(r'```\s*'), '')
           .trim();
 
-      final json = jsonDecode(cleaned) as Map<String, dynamic>;
-      if (json['price'] == null) {
-        return GeminiPriceResult(
-            error: json['error']?.toString() ?? 'Price not available');
+      final json = jsonDecode(clean) as Map<String, dynamic>;
+      if (json['currentValue'] == null) {
+        return const GeminiResult(error: 'Could not estimate value');
       }
 
-      final price = (json['price'] as num).toDouble();
-      return GeminiPriceResult(price: price);
+      return GeminiResult(
+        currentValue: (json['currentValue'] as num).toDouble(),
+        returnPercent: json['returnPercent'] != null
+            ? (json['returnPercent'] as num).toDouble()
+            : null,
+      );
     } catch (e) {
-      return GeminiPriceResult(error: e.toString());
+      return GeminiResult(error: e.toString());
     }
   }
 
-  Future<Map<int, GeminiPriceResult>> fetchAllPrices(
+  Future<Map<int, GeminiResult>> fetchAllValues(
       List<InvestmentAsset> assets) async {
-    final results = <int, GeminiPriceResult>{};
-    for (final asset in assets) {
-      if (asset.id == null) continue;
-      results[asset.id!] = await fetchPrice(asset);
-      // small delay between calls to avoid hitting free-tier rate limits
-      await Future.delayed(const Duration(milliseconds: 1200));
+    final results = <int, GeminiResult>{};
+    for (final a in assets) {
+      if (a.id == null) continue;
+      results[a.id!] = await fetchValue(a);
+      await Future.delayed(const Duration(milliseconds: 1500));
     }
     return results;
   }
