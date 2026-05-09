@@ -24,18 +24,19 @@ void workmanagerCallbackDispatcher() {
     final settings = await db.getSettings();
     if (settings == null || !settings.autoUpdateEnabled) return true;
 
-    final assets = await db.getAllAssets();
+    final assets = await db.getAllInvestments();
     if (assets.isEmpty) return true;
 
     final gemini = GeminiService(apiKey: apiKey, model: settings.geminiModel);
 
     for (final asset in assets) {
       if (asset.id == null) continue;
-      final result = await gemini.fetchPrice(asset);
+      final result = await gemini.fetchValue(asset);
       if (result.success) {
-        await db.updateAssetPrice(asset.id!, result.price!, DateTime.now());
+        await db.updateInvestmentValue(
+            asset.id!, result.currentValue!, DateTime.now());
       }
-      await Future.delayed(const Duration(seconds: 1));
+      await Future.delayed(const Duration(seconds: 2));
     }
 
     await db.updateLastPortfolioUpdate(DateTime.now());
