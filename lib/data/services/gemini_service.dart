@@ -57,18 +57,48 @@ class GeminiService {
 
   static String _cagrHint(String type) {
     switch (type) {
-      case 'physical_gold':
-        return 'Typical gold CAGR in India: 8-12% per year.';
-      case 'gold_etf':
-        return 'Gold ETF tracks gold price. Typical CAGR: 8-12% per year.';
-      case 'silver_etf':
-        return 'Silver ETF CAGR in India: 6-10% per year.';
       case 'mutual_fund':
-        return 'Equity mutual fund CAGR in India: 12-15% per year. Debt fund: 6-8%.';
+        return 'Equity mutual fund avg CAGR in India: 12-15%/yr. Debt: 6-8%/yr. Use 12% if unknown.';
       case 'stocks':
-        return 'Indian large-cap stock CAGR: 12-15% per year on average.';
+        return 'Indian large-cap stock avg CAGR: 12-15%/yr. Use 12% if unknown.';
+      case 'us_stocks':
+        return 'US large-cap avg CAGR: ~14%/yr in USD. Add ~2% for INR depreciation.';
+      case 'gold_etf':
+        return 'Gold ETF mirrors gold price. India gold CAGR: 8-12%/yr. Use 10%.';
+      case 'silver_etf':
+        return 'Silver ETF India CAGR: 6-10%/yr. Use 8%.';
+      case 'physical_gold':
+        return 'Physical gold India CAGR: 8-12%/yr. Use 10%.';
+      case 'physical_silver':
+        return 'Physical silver India CAGR: 6-10%/yr. Use 8%.';
+      case 'sgb':
+        return 'SGB: gold price appreciation + 2.5% interest. Total ~10-12%/yr. Use 10%.';
+      case 'reit':
+        return 'Indian REIT avg return: 8-12%/yr (yield + appreciation). Use 9%.';
+      case 'crypto':
+        return 'Crypto is volatile. Use conservative 15%/yr for established coins (BTC/ETH). May be negative.';
+      case 'fixed_deposit':
+        return 'FD interest rate in India: 6.5-7.5%/yr. Use 7%.';
+      case 'recurring_deposit':
+        return 'RD interest rate in India: 6-7%/yr. Use 6.5%.';
+      case 'ppf':
+        return 'PPF current rate: 7.1%/yr, compounded annually, tax-free.';
+      case 'epf':
+        return 'EPF current rate: 8.25%/yr, compounded annually, tax-free on maturity.';
+      case 'nps':
+        return 'NPS equity-heavy avg CAGR: 10-12%/yr. Debt: 7-9%/yr. Use 10%.';
+      case 'nsc':
+        return 'NSC current rate: 7.7%/yr, compounded half-yearly.';
+      case 'bonds':
+        return 'Indian govt/corporate bonds avg: 7-8%/yr. Use 7.5%.';
+      case 'post_office':
+        return 'Post office schemes (MIS/TD/SCSS/SSY/KVP): 7-8.2%/yr. Use 7.5%.';
+      case 'real_estate':
+        return 'Real estate appreciation in India: 6-10%/yr. Use 7%. Add rental yield if applicable.';
+      case 'ulip':
+        return 'ULIP equity avg CAGR after charges: 8-12%/yr. Use 10%.';
       default:
-        return 'Use a conservative 8-10% annual return estimate.';
+        return 'Use a conservative 8% annual return estimate.';
     }
   }
 

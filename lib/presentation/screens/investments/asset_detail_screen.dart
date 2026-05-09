@@ -31,6 +31,7 @@ class AssetDetailScreen extends ConsumerWidget {
     }
 
     final pct = asset.returnPct;
+    final isNavAsset = NavService.isEligible(asset);
 
     return Scaffold(
       appBar: AppBar(
@@ -121,21 +122,29 @@ class AssetDetailScreen extends ConsumerWidget {
               ),
             ),
             const Gap(20),
+            // ── Live NAV banner for mfapi assets ──
+            if (isNavAsset) ...[
+              _NavBanner(
+                schemeCode: asset.symbol!,
+                hasInvestmentDate: asset.investedAt != null,
+              ),
+              const Gap(16),
+            ],
+
             _infoCard([
               _infoRow('Invested', formatCurrency(asset.amountInvested)),
               _infoRow('Type', kAssetTypeLabels[asset.type] ?? asset.type),
-              if (asset.symbol != null) _infoRow(
-                NavService.isEligible(asset) ? 'Scheme Code' : 'Symbol',
-                asset.symbol!,
-              ),
+              if (asset.symbol != null)
+                _infoRow(
+                  isNavAsset ? 'Scheme Code' : 'Symbol',
+                  asset.symbol!,
+                ),
               if (asset.investedAt != null)
                 _infoRow('Invested On', formatDate(asset.investedAt!)),
               _infoRow('Added on', formatDate(asset.createdAt)),
               if (asset.notes != null) _infoRow('Notes', asset.notes!),
-              if (NavService.isEligible(asset))
-                _infoRow('Source', 'mfapi.in (exact NAV)')
-              else
-                _infoRow('Source', 'Gemini AI (estimate)'),
+              _infoRow('Valuation',
+                  isNavAsset ? 'mfapi.in (exact NAV)' : 'Gemini AI (estimate)'),
             ]),
             const Gap(20),
             SizedBox(
@@ -254,7 +263,13 @@ class _EditSheetState extends State<_EditSheet> {
   late final TextEditingController _symbolCtrl;
   late final TextEditingController _notesCtrl;
   late String _type;
+  DateTime? _investedAt;
   bool _saving = false;
+
+  static const _months = [
+    'Jan','Feb','Mar','Apr','May','Jun',
+    'Jul','Aug','Sep','Oct','Nov','Dec'
+  ];
 
   @override
   void initState() {
@@ -263,10 +278,28 @@ class _EditSheetState extends State<_EditSheet> {
     _symbolCtrl = TextEditingController(text: widget.asset.symbol ?? '');
     _notesCtrl = TextEditingController(text: widget.asset.notes ?? '');
     _type = widget.asset.type;
+    _investedAt = widget.asset.investedAt;
   }
 
   @override
-  void dispose() { _nameCtrl.dispose(); _symbolCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    _nameCtrl.dispose();
+    _symbolCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _investedAt ?? now,
+      firstDate: DateTime(2000),
+      lastDate: now,
+      helpText: 'When did you invest?',
+    );
+    if (picked != null) setState(() => _investedAt = picked);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -276,43 +309,108 @@ class _EditSheetState extends State<_EditSheet> {
         decoration: const BoxDecoration(
             color: kCard, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
         padding: const EdgeInsets.all(kPad),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Edit Investment',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-          const Gap(16),
-          TextFormField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
-          const Gap(10),
-          DropdownButtonFormField<String>(
-            value: _type,
-            decoration: const InputDecoration(labelText: 'Type'),
-            items: kAssetTypes.map((t) => DropdownMenuItem(value: t, child: Text(kAssetTypeLabels[t] ?? t))).toList(),
-            onChanged: (v) => setState(() => _type = v ?? 'other'),
-          ),
-          const Gap(10),
-          TextFormField(controller: _symbolCtrl, decoration: const InputDecoration(labelText: 'Symbol (optional)')),
-          const Gap(10),
-          TextFormField(controller: _notesCtrl, decoration: const InputDecoration(hintText: 'Notes')),
-          const Gap(16),
-          SizedBox(width: double.infinity, child: FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving ? const SizedBox(width: 18, height: 18,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Save'),
-          )),
-          const Gap(8),
-        ]),
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Edit Investment',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const Gap(16),
+            TextFormField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
+            const Gap(10),
+            DropdownButtonFormField<String>(
+              value: kAssetTypes.contains(_type) ? _type : 'other',
+              decoration: const InputDecoration(labelText: 'Type'),
+              items: kAssetTypes
+                  .map((t) => DropdownMenuItem(
+                      value: t, child: Text(kAssetTypeLabels[t] ?? t)))
+                  .toList(),
+              onChanged: (v) => setState(() => _type = v ?? 'other'),
+            ),
+            const Gap(10),
+            TextFormField(
+              controller: _symbolCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Symbol / Scheme Code (optional)'),
+            ),
+            const Gap(10),
+            // Investment date picker
+            GestureDetector(
+              onTap: _pickDate,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                decoration: BoxDecoration(
+                    border: Border.all(color: kDivider),
+                    borderRadius: BorderRadius.circular(kRadius)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.calendar_today_rounded,
+                        size: 18, color: kTextSecondary),
+                    const Gap(10),
+                    Expanded(
+                      child: Text(
+                        _investedAt != null
+                            ? 'Invested on ${_investedAt!.day} ${_months[_investedAt!.month - 1]} ${_investedAt!.year}'
+                            : 'Investment date (set for exact P&L)',
+                        style: TextStyle(
+                            fontSize: 14,
+                            color: _investedAt != null
+                                ? kTextPrimary
+                                : kTextSecondary),
+                      ),
+                    ),
+                    if (_investedAt != null)
+                      GestureDetector(
+                        onTap: () => setState(() => _investedAt = null),
+                        child: const Icon(Icons.close_rounded,
+                            size: 16, color: kTextSecondary),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const Gap(10),
+            TextFormField(
+              controller: _notesCtrl,
+              decoration: const InputDecoration(hintText: 'Notes'),
+            ),
+            const Gap(16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                    : const Text('Save'),
+              ),
+            ),
+            const Gap(8),
+          ]),
+        ),
       ),
     );
   }
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    await widget.ref.read(investmentsProvider.notifier).update(widget.asset.copyWith(
-      name: _nameCtrl.text.trim(),
-      type: _type,
-      symbol: _symbolCtrl.text.trim().isEmpty ? null : _symbolCtrl.text.trim(),
-      notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-    ));
+    await widget.ref.read(investmentsProvider.notifier).update(
+          widget.asset.copyWith(
+            name: _nameCtrl.text.trim(),
+            type: _type,
+            symbol: _symbolCtrl.text.trim().isEmpty
+                ? null
+                : _symbolCtrl.text.trim(),
+            investedAt: _investedAt,
+            notes: _notesCtrl.text.trim().isEmpty
+                ? null
+                : _notesCtrl.text.trim(),
+          ),
+        );
     if (mounted) Navigator.pop(context);
   }
 }
@@ -371,5 +469,62 @@ class _AddMoreSheetState extends State<_AddMoreSheet> {
     setState(() => _saving = true);
     await widget.ref.read(investmentsProvider.notifier).addMore(widget.asset.id!, amount);
     if (mounted) Navigator.pop(context);
+  }
+}
+
+// ── Live NAV banner (mfapi.in) ────────────────────────────────────────────────
+
+class _NavBanner extends ConsumerWidget {
+  final String schemeCode;
+  final bool hasInvestmentDate;
+  const _NavBanner(
+      {required this.schemeCode, required this.hasInvestmentDate});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final navAsync = ref.watch(currentNavProvider(schemeCode));
+
+    return navAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (nav) {
+        if (nav == null) return const SizedBox.shrink();
+        return Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: kPad, vertical: 12),
+          decoration: BoxDecoration(
+            color: kPrimaryLight,
+            borderRadius: BorderRadius.circular(kRadius),
+            border: Border.all(color: kPrimary.withOpacity(0.25)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.show_chart_rounded,
+                      size: 16, color: kPrimary),
+                  const Gap(6),
+                  Text(
+                    'Live NAV  ₹${nav.toStringAsFixed(4)}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: kPrimary),
+                  ),
+                ],
+              ),
+              if (!hasInvestmentDate) ...[
+                const Gap(6),
+                const Text(
+                  'Set your investment date (tap ⋮ → Edit) to calculate actual units & P&L.',
+                  style: TextStyle(fontSize: 12, color: kTextSecondary),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
   }
 }

@@ -346,3 +346,11 @@ class CategoryTotal {
 // ─── Price refresh loading ────────────────────────────────────────────────────
 
 final priceRefreshingProvider = StateProvider<bool>((ref) => false);
+
+// ─── Live NAV for a single mfapi scheme code ─────────────────────────────────
+// Used in AssetDetailScreen to show current NAV even without investment date.
+
+final currentNavProvider =
+    FutureProvider.family<double?, String>((ref, schemeCode) async {
+  return NavService.fetchCurrentNav(schemeCode);
+});

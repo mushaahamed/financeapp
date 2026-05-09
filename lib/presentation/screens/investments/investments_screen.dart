@@ -450,6 +450,16 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
     });
   }
 
+  Future<void> _pickType(BuildContext context) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _TypePickerSheet(),
+    );
+    if (picked != null) setState(() => _type = picked);
+  }
+
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -654,20 +664,36 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
 
               const Gap(12),
 
-              // ── Type dropdown (only shown for custom) ──
-              if (_selected == null)
-                DropdownButtonFormField<String>(
-                  value: _type,
-                  decoration: const InputDecoration(labelText: 'Type'),
-                  items: kAssetTypes
-                      .map((t) => DropdownMenuItem(
-                          value: t,
-                          child: Text(kAssetTypeLabels[t] ?? t)))
-                      .toList(),
-                  onChanged: (v) => setState(() => _type = v ?? 'other'),
+              // ── Type picker (only shown for custom entry) ──
+              if (_selected == null) ...[
+                GestureDetector(
+                  onTap: () => _pickType(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 14),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: kDivider),
+                      borderRadius: BorderRadius.circular(kRadius),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.category_rounded,
+                            size: 18, color: kTextSecondary),
+                        const Gap(10),
+                        Expanded(
+                          child: Text(
+                            kAssetTypeLabels[_type] ?? _type,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ),
+                        const Icon(Icons.arrow_drop_down,
+                            color: kTextSecondary),
+                      ],
+                    ),
+                  ),
                 ),
-
-              if (_selected == null) const Gap(12),
+                const Gap(12),
+              ],
 
               // ── Amount ──
               TextFormField(
@@ -747,6 +773,91 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Type picker sheet (grouped) ───────────────────────────────────────────────
+
+class _TypePickerSheet extends StatelessWidget {
+  const _TypePickerSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Gap(12),
+          Center(
+            child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: kDivider,
+                    borderRadius: BorderRadius.circular(2))),
+          ),
+          const Gap(12),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: kPad),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Select Investment Type',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          const Gap(8),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(kPad, 0, kPad, kPad),
+              children: kAssetTypeGroups.entries.map((group) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Gap(12),
+                    Text(group.key,
+                        style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: kTextSecondary,
+                            letterSpacing: 0.8)),
+                    const Gap(6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: group.value.map((type) {
+                        return GestureDetector(
+                          onTap: () => Navigator.pop(context, type),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: kDivider),
+                              borderRadius: BorderRadius.circular(20),
+                              color: kBackground,
+                            ),
+                            child: Text(
+                              kAssetTypeLabels[type] ?? type,
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        ],
       ),
     );
   }

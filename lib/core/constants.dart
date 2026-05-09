@@ -21,22 +21,91 @@ const kDefaultCurrencySymbol = '₹';
 const kDbName = 'paisa.db';
 const kSecureKeyGeminiApiKey = 'gemini_api_key';
 
+// ── All supported investment types ────────────────────────────────────────────
+
 const kAssetTypes = [
-  'physical_gold',
-  'gold_etf',
-  'silver_etf',
+  // Market-linked
   'mutual_fund',
   'stocks',
+  'us_stocks',
+  'gold_etf',
+  'silver_etf',
+  'reit',
+  'crypto',
+  // Fixed / government
+  'fixed_deposit',
+  'recurring_deposit',
+  'ppf',
+  'epf',
+  'nps',
+  'nsc',
+  'sgb',
+  'bonds',
+  'post_office',
+  // Physical
+  'physical_gold',
+  'physical_silver',
+  'real_estate',
+  // Other
+  'ulip',
   'other',
 ];
 
 const kAssetTypeLabels = {
-  'physical_gold': 'Physical Gold',
+  'mutual_fund': 'Mutual Fund',
+  'stocks': 'Indian Stocks',
+  'us_stocks': 'US Stocks',
   'gold_etf': 'Gold ETF',
   'silver_etf': 'Silver ETF',
-  'mutual_fund': 'Mutual Fund',
-  'stocks': 'Stocks',
+  'reit': 'REIT',
+  'crypto': 'Crypto',
+  'fixed_deposit': 'Fixed Deposit (FD)',
+  'recurring_deposit': 'Recurring Deposit (RD)',
+  'ppf': 'PPF',
+  'epf': 'EPF / PF',
+  'nps': 'NPS',
+  'nsc': 'NSC',
+  'sgb': 'Sovereign Gold Bond',
+  'bonds': 'Bonds / Debentures',
+  'post_office': 'Post Office Scheme',
+  'physical_gold': 'Physical Gold',
+  'physical_silver': 'Physical Silver',
+  'real_estate': 'Real Estate',
+  'ulip': 'ULIP',
   'other': 'Other',
+};
+
+// Grouped for the UI type picker
+const kAssetTypeGroups = {
+  'Market-linked': [
+    'mutual_fund',
+    'stocks',
+    'us_stocks',
+    'gold_etf',
+    'silver_etf',
+    'reit',
+    'crypto',
+  ],
+  'Fixed Returns': [
+    'fixed_deposit',
+    'recurring_deposit',
+    'ppf',
+    'epf',
+    'nps',
+    'nsc',
+    'sgb',
+    'bonds',
+    'post_office',
+  ],
+  'Physical / Real': [
+    'physical_gold',
+    'physical_silver',
+    'real_estate',
+  ],
+  'Other': [
+    'ulip',
+    'other',
+  ],
 };
 
 const kExpenseCategories = [
