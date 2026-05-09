@@ -18,7 +18,15 @@ class DatabaseHelper {
 
   Future<Database> _initDb() async {
     final path = join(await getDatabasesPath(), 'paisa_v2.db');
-    return openDatabase(path, version: 1, onCreate: _create);
+    return openDatabase(path,
+        version: 2, onCreate: _create, onUpgrade: _upgrade);
+  }
+
+  Future<void> _upgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(
+          'ALTER TABLE investments ADD COLUMN invested_at TEXT');
+    }
   }
 
   Future<void> _create(Database db, int version) async {
@@ -56,6 +64,7 @@ class DatabaseHelper {
         amount_invested REAL NOT NULL DEFAULT 0,
         current_value REAL,
         created_at TEXT NOT NULL,
+        invested_at TEXT,
         last_updated_at TEXT,
         notes TEXT
       )

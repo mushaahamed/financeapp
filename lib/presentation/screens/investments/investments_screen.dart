@@ -5,6 +5,7 @@ import 'package:gap/gap.dart';
 import '../../../core/constants.dart';
 import '../../../core/formatters.dart';
 import '../../../data/models/investment_asset_model.dart';
+import '../../../data/services/search_service.dart';
 import '../../../providers/providers.dart';
 import '../../widgets/amount_badge.dart';
 import 'asset_detail_screen.dart';
@@ -20,7 +21,6 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
   @override
   void initState() {
     super.initState();
-    // Auto-refresh when screen opens if Gemini key is set
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoRefresh());
   }
 
@@ -29,7 +29,6 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
     if (key == null || key.isEmpty) return;
     final assets = ref.read(investmentsProvider).value ?? [];
     if (assets.isEmpty) return;
-    // Only refresh if prices are stale (older than 6 hours)
     final stale = assets.any((a) =>
         a.lastUpdatedAt == null ||
         DateTime.now().difference(a.lastUpdatedAt!).inHours > 6);
@@ -170,7 +169,8 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
                       children: [
                         _SummaryCell(
                           label: 'P&L',
-                          value: '${summary.pnl >= 0 ? '+' : ''}${formatCurrency(summary.pnl)}',
+                          value:
+                              '${summary.pnl >= 0 ? '+' : ''}${formatCurrency(summary.pnl)}',
                           valueColor: summary.pnl >= 0 ? kGain : kLoss,
                         ),
                         _SummaryCell(
@@ -236,7 +236,8 @@ class _SummaryCell extends StatelessWidget {
   final String label;
   final String value;
   final Color? valueColor;
-  const _SummaryCell({required this.label, required this.value, this.valueColor});
+  const _SummaryCell(
+      {required this.label, required this.value, this.valueColor});
 
   @override
   Widget build(BuildContext context) => Expanded(
@@ -270,7 +271,8 @@ class _AssetCard extends ConsumerWidget {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => AssetDetailScreen(assetId: asset.id!)),
+        MaterialPageRoute(
+            builder: (_) => AssetDetailScreen(assetId: asset.id!)),
       ),
       child: Container(
         padding: const EdgeInsets.all(kPad),
@@ -297,6 +299,9 @@ class _AssetCard extends ConsumerWidget {
                 _Chip(kAssetTypeLabels[asset.type] ?? asset.type),
                 if (asset.symbol != null && asset.symbol!.isNotEmpty)
                   _Chip(asset.symbol!),
+                if (asset.investedAt != null)
+                  _Chip(
+                      'Since ${_shortDate(asset.investedAt!)}'),
               ],
             ),
             const Gap(10),
@@ -307,7 +312,8 @@ class _AssetCard extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Invested',
-                          style: TextStyle(fontSize: 11, color: kTextSecondary)),
+                          style:
+                              TextStyle(fontSize: 11, color: kTextSecondary)),
                       Text(formatCurrency(asset.amountInvested),
                           style: const TextStyle(
                               fontSize: 14, fontWeight: FontWeight.w600)),
@@ -322,8 +328,8 @@ class _AssetCard extends ConsumerWidget {
                           asset.currentValue != null
                               ? 'Current Value'
                               : 'No price yet',
-                          style:
-                              const TextStyle(fontSize: 11, color: kTextSecondary)),
+                          style: const TextStyle(
+                              fontSize: 11, color: kTextSecondary)),
                       Text(
                           asset.currentValue != null
                               ? formatCurrency(asset.currentValue!)
@@ -344,6 +350,14 @@ class _AssetCard extends ConsumerWidget {
       ),
     );
   }
+
+  String _shortDate(DateTime d) =>
+      '${_months[d.month - 1]} ${d.year}';
+
+  static const _months = [
+    'Jan','Feb','Mar','Apr','May','Jun',
+    'Jul','Aug','Sep','Oct','Nov','Dec'
+  ];
 }
 
 class _Chip extends StatelessWidget {
@@ -373,33 +387,123 @@ void _showAddSheet(BuildContext context, WidgetRef ref) {
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _AddInvestmentSheet(ref: ref),
+    builder: (_) => _AddInvestmentSheet(parentRef: ref),
   );
 }
 
 class _AddInvestmentSheet extends StatefulWidget {
-  final WidgetRef ref;
-  const _AddInvestmentSheet({required this.ref});
+  final WidgetRef parentRef;
+  const _AddInvestmentSheet({required this.parentRef});
 
   @override
   State<_AddInvestmentSheet> createState() => _AddInvestmentSheetState();
 }
 
 class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
+  // Step 1 — search
+  final _searchCtrl = TextEditingController();
+  List<InvestmentSuggestion> _suggestions = [];
+  bool _searching = false;
+  InvestmentSuggestion? _selected;
+
+  // Step 2 — details
   final _nameCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
-  final _symbolCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
   String _type = 'other';
+  DateTime? _investedAt;
   bool _saving = false;
 
   @override
   void dispose() {
+    _searchCtrl.dispose();
     _nameCtrl.dispose();
     _amountCtrl.dispose();
-    _symbolCtrl.dispose();
-    _notesCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _onSearchChanged(String q) async {
+    if (q.trim().length < 2) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    setState(() => _searching = true);
+    final results = await SearchService.search(q);
+    if (mounted) setState(() { _suggestions = results; _searching = false; });
+  }
+
+  void _selectSuggestion(InvestmentSuggestion s) {
+    setState(() {
+      _selected = s;
+      _nameCtrl.text = s.name;
+      _type = s.type;
+      _suggestions = [];
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selected = null;
+      _searchCtrl.clear();
+      _nameCtrl.clear();
+      _suggestions = [];
+    });
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _investedAt ?? now,
+      firstDate: DateTime(2000),
+      lastDate: now,
+      helpText: 'When did you invest?',
+    );
+    if (picked != null) setState(() => _investedAt = picked);
+  }
+
+  String _formatDate(DateTime d) =>
+      '${d.day} ${_months[d.month - 1]} ${d.year}';
+
+  static const _months = [
+    'Jan','Feb','Mar','Apr','May','Jun',
+    'Jul','Aug','Sep','Oct','Nov','Dec'
+  ];
+
+  Future<void> _save() async {
+    final name = _nameCtrl.text.trim();
+    final amount = double.tryParse(_amountCtrl.text.trim());
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Enter investment name')));
+      return;
+    }
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Enter a valid amount')));
+      return;
+    }
+    setState(() => _saving = true);
+    final asset = InvestmentAsset(
+      name: name,
+      type: _type,
+      symbol: _selected?.symbol,
+      amountInvested: amount,
+      createdAt: DateTime.now(),
+      investedAt: _investedAt,
+    );
+    await widget.parentRef.read(investmentsProvider.notifier).add(asset);
+    if (mounted) Navigator.pop(context);
+    // Auto-fetch price
+    final assets = widget.parentRef.read(investmentsProvider).value ?? [];
+    final added = assets.isNotEmpty ? assets.last : null;
+    if (added != null) {
+      widget.parentRef.read(priceRefreshingProvider.notifier).state = true;
+      await widget.parentRef
+          .read(investmentsProvider.notifier)
+          .refreshOne(added);
+      widget.parentRef.read(priceRefreshingProvider.notifier).state = false;
+    }
   }
 
   @override
@@ -411,7 +515,7 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
         decoration: const BoxDecoration(
             color: kCard,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        padding: const EdgeInsets.all(kPad),
+        padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 0),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -430,32 +534,142 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const Gap(4),
               const Text(
-                'Gemini will auto-estimate the current value.',
+                'Search a fund/stock, or type any name below.',
                 style: TextStyle(fontSize: 13, color: kTextSecondary),
               ),
               const Gap(16),
-              TextFormField(
-                controller: _nameCtrl,
-                autofocus: true,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                    labelText: 'Investment name',
-                    hintText: 'e.g. HDFC Nifty 50 Index Fund, Physical Gold'),
-              ),
-              const Gap(10),
-              DropdownButtonFormField<String>(
-                value: _type,
-                decoration: const InputDecoration(labelText: 'Type'),
-                items: kAssetTypes
-                    .map((t) => DropdownMenuItem(
-                        value: t,
-                        child: Text(kAssetTypeLabels[t] ?? t)))
-                    .toList(),
-                onChanged: (v) => setState(() => _type = v ?? 'other'),
-              ),
-              const Gap(10),
+
+              // ── Search field ──
+              if (_selected == null) ...[
+                TextField(
+                  controller: _searchCtrl,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.words,
+                  onChanged: _onSearchChanged,
+                  decoration: InputDecoration(
+                    labelText: 'Search fund / stock name',
+                    hintText: 'e.g. HDFC Nifty, Reliance, Gold ETF',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _searching
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2)))
+                        : null,
+                  ),
+                ),
+                if (_suggestions.isNotEmpty) ...[
+                  const Gap(6),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: kCard,
+                      border: Border.all(color: kDivider),
+                      borderRadius: BorderRadius.circular(kRadius),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _suggestions.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1, indent: 16),
+                      itemBuilder: (_, i) {
+                        final s = _suggestions[i];
+                        return ListTile(
+                          dense: true,
+                          title: Text(s.name,
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500)),
+                          subtitle: Text(
+                              '${kAssetTypeLabels[s.type] ?? s.type}'
+                              '${s.symbol != null ? ' · ${s.symbol}' : ''}',
+                              style: const TextStyle(
+                                  fontSize: 11, color: kTextSecondary)),
+                          onTap: () => _selectSuggestion(s),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                // Allow typing a custom name without selecting a suggestion
+                const Gap(8),
+                const Divider(),
+                const Gap(4),
+                const Text('— or enter a custom name —',
+                    style:
+                        TextStyle(fontSize: 12, color: kTextSecondary)),
+                const Gap(8),
+                TextFormField(
+                  controller: _nameCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                      labelText: 'Investment name (custom)',
+                      hintText: 'e.g. PPF, NPS, Physical Gold'),
+                ),
+              ] else ...[
+                // Selected state — show chip + clear button
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: kPrimaryLight,
+                    borderRadius: BorderRadius.circular(kRadius),
+                    border: Border.all(color: kPrimary.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle_rounded,
+                          color: kPrimary, size: 18),
+                      const Gap(8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_selected!.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14)),
+                            Text(
+                                '${kAssetTypeLabels[_selected!.type] ?? _selected!.type}'
+                                '${_selected!.symbol != null ? ' · ${_selected!.symbol}' : ''}',
+                                style: const TextStyle(
+                                    fontSize: 12, color: kTextSecondary)),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: _clearSelection,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const Gap(12),
+
+              // ── Type dropdown (only shown for custom) ──
+              if (_selected == null)
+                DropdownButtonFormField<String>(
+                  value: _type,
+                  decoration: const InputDecoration(labelText: 'Type'),
+                  items: kAssetTypes
+                      .map((t) => DropdownMenuItem(
+                          value: t,
+                          child: Text(kAssetTypeLabels[t] ?? t)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _type = v ?? 'other'),
+                ),
+
+              if (_selected == null) const Gap(12),
+
+              // ── Amount ──
               TextFormField(
                 controller: _amountCtrl,
+                autofocus: _selected != null,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [
@@ -466,19 +680,53 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
                     hintText: '50000',
                     prefixText: '₹  '),
               ),
-              const Gap(10),
-              TextFormField(
-                controller: _symbolCtrl,
-                decoration: const InputDecoration(
-                    labelText: 'Symbol / Fund name (optional, helps Gemini)',
-                    hintText: 'e.g. HDFCNIFTY, GOLDBEES'),
+
+              const Gap(12),
+
+              // ── Investment date ──
+              GestureDetector(
+                onTap: _pickDate,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 14),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: kDivider),
+                    borderRadius: BorderRadius.circular(kRadius),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today_rounded,
+                          size: 18, color: kTextSecondary),
+                      const Gap(10),
+                      Expanded(
+                        child: Text(
+                          _investedAt != null
+                              ? 'Invested on ${_formatDate(_investedAt!)}'
+                              : 'Investment date (optional)',
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: _investedAt != null
+                                  ? kTextPrimary
+                                  : kTextSecondary),
+                        ),
+                      ),
+                      if (_investedAt != null)
+                        GestureDetector(
+                          onTap: () => setState(() => _investedAt = null),
+                          child: const Icon(Icons.close_rounded,
+                              size: 16, color: kTextSecondary),
+                        ),
+                    ],
+                  ),
+                ),
               ),
-              const Gap(10),
-              TextFormField(
-                controller: _notesCtrl,
-                decoration: const InputDecoration(hintText: 'Notes (optional)'),
+              const Gap(4),
+              const Text(
+                'Set this if you invested before using this app — helps Gemini give more accurate estimates.',
+                style: TextStyle(fontSize: 11, color: kTextSecondary),
               ),
-              const Gap(16),
+
+              const Gap(20),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
@@ -492,45 +740,11 @@ class _AddInvestmentSheetState extends State<_AddInvestmentSheet> {
                       : const Text('Add & Fetch Price'),
                 ),
               ),
-              const Gap(8),
+              const Gap(kPad),
             ],
           ),
         ),
       ),
     );
-  }
-
-  Future<void> _save() async {
-    final name = _nameCtrl.text.trim();
-    final amount = double.tryParse(_amountCtrl.text.trim());
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Enter investment name')));
-      return;
-    }
-    if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a valid amount')));
-      return;
-    }
-    setState(() => _saving = true);
-    final asset = InvestmentAsset(
-      name: name,
-      type: _type,
-      symbol: _symbolCtrl.text.trim().isEmpty ? null : _symbolCtrl.text.trim(),
-      amountInvested: amount,
-      createdAt: DateTime.now(),
-      notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-    );
-    await widget.ref.read(investmentsProvider.notifier).add(asset);
-    if (mounted) Navigator.pop(context);
-    // Auto-fetch price after adding
-    final assets = widget.ref.read(investmentsProvider).value ?? [];
-    final added = assets.isNotEmpty ? assets.last : null;
-    if (added != null) {
-      widget.ref.read(priceRefreshingProvider.notifier).state = true;
-      await widget.ref.read(investmentsProvider.notifier).refreshOne(added);
-      widget.ref.read(priceRefreshingProvider.notifier).state = false;
-    }
   }
 }

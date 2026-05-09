@@ -30,11 +30,19 @@ class GeminiService {
 
   String _prompt(InvestmentAsset a) {
     final sym = (a.symbol != null && a.symbol!.isNotEmpty)
-        ? ' ticker:${a.symbol}'
+        ? ' ticker/code:${a.symbol}'
         : '';
+    final since = a.investedAt ?? a.createdAt;
+    final months = DateTime.now().difference(since).inDays ~/ 30;
+    final holdingStr = months <= 0
+        ? 'recently invested'
+        : months < 12
+            ? '$months months ago'
+            : '${(months / 12).toStringAsFixed(1)} years ago';
     return 'Indian investment portfolio tracker needs estimated current value.\n'
-        'Asset: "${a.name}"$sym type:${a.type} invested:${a.amountInvested.toStringAsFixed(0)} INR\n'
-        'Give rough estimate based on typical Indian market returns.\n'
+        'Asset: "${a.name}"$sym\n'
+        'Type: ${a.type}, Amount invested: ₹${a.amountInvested.toStringAsFixed(0)}, Invested: $holdingStr\n'
+        'Use typical Indian market returns for this asset class over this holding period.\n'
         'Reply ONLY with this JSON, no other text:\n'
         '{"currentValue":NNNN,"returnPercent":NN}';
   }

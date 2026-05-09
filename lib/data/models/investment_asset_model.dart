@@ -7,6 +7,7 @@ class InvestmentAsset {
   final double amountInvested;   // total money you put in
   final double? currentValue;    // Gemini-estimated current value
   final DateTime createdAt;
+  final DateTime? investedAt;    // when the user originally invested (may predate app)
   final DateTime? lastUpdatedAt;
   final String? notes;
 
@@ -19,6 +20,7 @@ class InvestmentAsset {
     required this.amountInvested,
     this.currentValue,
     required this.createdAt,
+    this.investedAt,
     this.lastUpdatedAt,
     this.notes,
   });
@@ -35,6 +37,7 @@ class InvestmentAsset {
     String? currency,
     double? amountInvested,
     double? currentValue,
+    DateTime? investedAt,
     DateTime? lastUpdatedAt,
     String? notes,
     bool clearValue = false,
@@ -48,6 +51,7 @@ class InvestmentAsset {
         amountInvested: amountInvested ?? this.amountInvested,
         currentValue: clearValue ? null : (currentValue ?? this.currentValue),
         createdAt: createdAt,
+        investedAt: investedAt ?? this.investedAt,
         lastUpdatedAt: lastUpdatedAt ?? this.lastUpdatedAt,
         notes: notes ?? this.notes,
       );
@@ -61,6 +65,7 @@ class InvestmentAsset {
         'amount_invested': amountInvested,
         'current_value': currentValue,
         'created_at': createdAt.toIso8601String(),
+        'invested_at': investedAt?.toIso8601String(),
         'last_updated_at': lastUpdatedAt?.toIso8601String(),
         'notes': notes,
       };
@@ -76,6 +81,9 @@ class InvestmentAsset {
             ? (m['current_value'] as num).toDouble()
             : null,
         createdAt: DateTime.parse(m['created_at'] as String),
+        investedAt: m['invested_at'] != null
+            ? DateTime.parse(m['invested_at'] as String)
+            : null,
         lastUpdatedAt: m['last_updated_at'] != null
             ? DateTime.parse(m['last_updated_at'] as String)
             : null,
