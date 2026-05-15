@@ -7,29 +7,48 @@ import '../../../core/formatters.dart';
 import '../../../data/models/expense_model.dart';
 import '../../../providers/providers.dart';
 import '../settings/settings_screen.dart';
-import '../../widgets/stat_card.dart';
 import '../../widgets/section_header.dart';
 
-// Category colour/icon for quick-repeat tiles (mirrors expenses_screen cats)
-class _QuickCat {
+// ── Category icon/colour (mirrors expenses_screen) ────────────────────────────
+
+class _CatMeta {
   final IconData icon;
   final Color color;
-  const _QuickCat(this.icon, this.color);
+  const _CatMeta(this.icon, this.color);
 }
 
-const _quickCats = <String, _QuickCat>{
-  'Food & Dining':  _QuickCat(Icons.restaurant_rounded,     Color(0xFFEF4444)),
-  'Shopping':       _QuickCat(Icons.shopping_bag_rounded,   Color(0xFFF97316)),
-  'Transport':      _QuickCat(Icons.directions_bus_rounded, Color(0xFF3B82F6)),
-  'Health':         _QuickCat(Icons.favorite_rounded,       Color(0xFFEC4899)),
-  'Entertainment':  _QuickCat(Icons.movie_rounded,          Color(0xFF8B5CF6)),
-  'Bills':          _QuickCat(Icons.receipt_long_rounded,   Color(0xFF06B6D4)),
-  'Friends':        _QuickCat(Icons.people_rounded,         Color(0xFF10B981)),
-  'Other':          _QuickCat(Icons.payments_rounded,       Color(0xFF64748B)),
+const _expCatMeta = <String, _CatMeta>{
+  'Food & Dining':  _CatMeta(Icons.restaurant_rounded,     Color(0xFFEF4444)),
+  'Shopping':       _CatMeta(Icons.shopping_bag_rounded,   Color(0xFFF97316)),
+  'Transport':      _CatMeta(Icons.directions_bus_rounded, Color(0xFF3B82F6)),
+  'Health':         _CatMeta(Icons.favorite_rounded,       Color(0xFFEC4899)),
+  'Entertainment':  _CatMeta(Icons.movie_rounded,          Color(0xFF8B5CF6)),
+  'Bills':          _CatMeta(Icons.receipt_long_rounded,   Color(0xFF06B6D4)),
+  'Friends':        _CatMeta(Icons.people_rounded,         Color(0xFF10B981)),
+  'Other':          _CatMeta(Icons.payments_rounded,       Color(0xFF64748B)),
 };
 
-_QuickCat _catForDash(String? cat) =>
-    _quickCats[cat] ?? const _QuickCat(Icons.payments_rounded, Color(0xFF64748B));
+const _incCatMeta = <String, _CatMeta>{
+  'Salary':                _CatMeta(Icons.work_rounded,              Color(0xFF10B981)),
+  'Freelance / Consulting':_CatMeta(Icons.laptop_rounded,            Color(0xFF0EA5E9)),
+  'Business':              _CatMeta(Icons.storefront_rounded,        Color(0xFF6366F1)),
+  'Investment Returns':    _CatMeta(Icons.trending_up_rounded,       Color(0xFF8B5CF6)),
+  'Rental Income':         _CatMeta(Icons.home_work_rounded,         Color(0xFFF59E0B)),
+  'Gift / Bonus':          _CatMeta(Icons.card_giftcard_rounded,     Color(0xFFEC4899)),
+  'Refund':                _CatMeta(Icons.replay_rounded,            Color(0xFF14B8A6)),
+  'Other Income':          _CatMeta(Icons.payments_rounded,          Color(0xFF64748B)),
+};
+
+_CatMeta _metaFor(Expense e) {
+  if (e.isIncome) {
+    return _incCatMeta[e.category] ??
+        const _CatMeta(Icons.add_circle_outline_rounded, Color(0xFF10B981));
+  }
+  return _expCatMeta[e.category] ??
+      const _CatMeta(Icons.payments_rounded, Color(0xFF64748B));
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -39,56 +58,27 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   final _cashCtrl = TextEditingController();
-  final _titleCtrl = TextEditingController();
-  final _amountCtrl = TextEditingController();
+  bool _cashEditing = false;
   bool _updatingCash = false;
-  bool _addingExpense = false;
 
   @override
   void dispose() {
     _cashCtrl.dispose();
-    _titleCtrl.dispose();
-    _amountCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _saveCash() async {
-    final val = double.tryParse(_cashCtrl.text.trim());
+    final val = double.tryParse(_cashCtrl.text.replaceAll(',', '').trim());
     if (val == null) return;
-    setState(() => _updatingCash = true);
+    setState(() { _updatingCash = true; _cashEditing = false; });
     await ref.read(settingsProvider.notifier).updateCash(val);
     setState(() => _updatingCash = false);
-    if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Cash updated')));
-    }
-  }
-
-  Future<void> _addExpense({String? title, double? amount}) async {
-    final t = title ?? _titleCtrl.text.trim();
-    final a = amount ?? double.tryParse(_amountCtrl.text.trim());
-    if (t.isEmpty || a == null || a <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a valid title and amount')));
-      return;
-    }
-    setState(() => _addingExpense = true);
-    await ref.read(expensesProvider.notifier).add(
-          Expense(title: t, amount: a, timestamp: DateTime.now()),
-        );
-    _titleCtrl.clear();
-    _amountCtrl.clear();
-    setState(() => _addingExpense = false);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('₹${a.toStringAsFixed(0)} deducted from cash')));
-    }
+    if (mounted) FocusScope.of(context).unfocus();
   }
 
   @override
   Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
-    final portfolio = ref.watch(portfolioSummaryProvider);
     final summaryAsync = ref.watch(dashboardSummaryProvider);
 
     return Scaffold(
@@ -98,8 +88,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen())),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
           ),
         ],
       ),
@@ -108,10 +100,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (settings) {
           if (settings == null) return const SizedBox();
-          if (_cashCtrl.text.isEmpty) {
+
+          // Only pre-fill cash field when not actively editing
+          if (!_cashEditing && _cashCtrl.text.isEmpty) {
             _cashCtrl.text = settings.currentCash.toStringAsFixed(2);
           }
-          final netWorth = settings.currentCash + portfolio.currentValue;
 
           return RefreshIndicator(
             onRefresh: () async {
@@ -119,277 +112,83 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ref.read(settingsProvider.notifier).load();
             },
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(kPad, 8, kPad, 100),
+              padding: const EdgeInsets.fromLTRB(kPad, 12, kPad, 120),
               children: [
-                // ── Net worth hero ──
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(kRadiusLg),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Net Worth',
-                          style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500)),
-                      const Gap(4),
-                      Text(
-                        formatCurrency(netWorth),
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 32,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -1),
-                      ),
-                      const Gap(16),
-                      Row(
-                        children: [
-                          _HeroStat(
-                              label: 'Cash',
-                              value: formatCurrency(settings.currentCash)),
-                          const SizedBox(
-                              height: 28,
-                              child: VerticalDivider(
-                                  color: Colors.white38, width: 24)),
-                          _HeroStat(
-                              label: 'Investments',
-                              value: formatCurrency(portfolio.currentValue)),
-                        ],
-                      ),
-                    ],
-                  ),
+
+                // ── Cash on hand card ──────────────────────────────────────
+                _CashCard(
+                  ctrl: _cashCtrl,
+                  updating: _updatingCash,
+                  onEditStart: () => setState(() => _cashEditing = true),
+                  onSave: _saveCash,
                 ),
 
-                const Gap(20),
+                const Gap(16),
 
-                // ── Update cash ──
-                const SectionHeader(title: 'CASH BALANCE'),
-                const Gap(8),
-                Container(
-                  decoration: BoxDecoration(
-                      color: kCard,
-                      borderRadius: BorderRadius.circular(kRadius),
-                      border: Border.all(color: kDivider)),
-                  padding: const EdgeInsets.symmetric(horizontal: kPad, vertical: 4),
-                  child: Row(
-                    children: [
-                      const Text('₹',
-                          style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700,
-                              color: kTextSecondary)),
-                      const Gap(8),
-                      Expanded(
-                        child: TextField(
-                          controller: _cashCtrl,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: true),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
-                          ],
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _saveCash(),
-                          style: const TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.w700),
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            fillColor: Colors.transparent,
-                            hintText: '0',
-                          ),
-                        ),
-                      ),
-                      _updatingCash
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : IconButton(
-                              icon: const Icon(Icons.check_circle_rounded,
-                                  color: kGain),
-                              tooltip: 'Save',
-                              onPressed: _saveCash,
-                            ),
-                    ],
-                  ),
+                // ── Monthly income / expense summary ───────────────────────
+                summaryAsync.when(
+                  loading: () => const _MonthlySummaryShimmer(),
+                  error: (_, __) => const SizedBox(),
+                  data: (summary) => _MonthlySummaryCard(summary: summary),
                 ),
 
-                const Gap(20),
+                const Gap(16),
 
-                // ── Quick add expense ──
-                const SectionHeader(title: 'ADD EXPENSE'),
-                const Gap(8),
-                Container(
-                  decoration: BoxDecoration(
-                      color: kCard,
-                      borderRadius: BorderRadius.circular(kRadius),
-                      border: Border.all(color: kDivider)),
-                  padding: const EdgeInsets.all(kPad),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: TextField(
-                              controller: _titleCtrl,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: const InputDecoration(hintText: 'What for?'),
-                            ),
-                          ),
-                          const Gap(8),
-                          Expanded(
-                            flex: 2,
-                            child: TextField(
-                              controller: _amountCtrl,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
-                              decoration: const InputDecoration(prefixText: '₹  ', hintText: '0'),
-                            ),
-                          ),
-                          const Gap(8),
-                          FilledButton(
-                            onPressed: _addingExpense ? null : () => _addExpense(),
-                            style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14)),
-                            child: _addingExpense
-                                ? const SizedBox(width: 16, height: 16,
-                                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                : const Icon(Icons.add, size: 20),
-                          ),
-                        ],
-                      ),
-
-                      // ── Quick repeat chips ──
-                      summaryAsync.when(
-                        loading: () => const SizedBox(),
-                        error: (_, __) => const SizedBox(),
-                        data: (summary) {
-                          if (summary.quickRepeat.isEmpty) return const SizedBox();
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Gap(12),
-                              const Divider(height: 1),
-                              const Gap(10),
-                              const Text('RECENT',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      color: kTextSecondary,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 0.8)),
-                              const Gap(8),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: summary.quickRepeat.map((e) {
-                                    final cat = _catForDash(e.category);
-                                    return GestureDetector(
-                                      onTap: () => _addExpense(
-                                          title: e.title, amount: e.amount),
-                                      child: Container(
-                                        margin: const EdgeInsets.only(right: 8),
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 12, vertical: 8),
-                                        decoration: BoxDecoration(
-                                          color: kBackground,
-                                          border: Border.all(color: kDivider),
-                                          borderRadius: BorderRadius.circular(kRadius),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Container(
-                                              width: 28,
-                                              height: 28,
-                                              decoration: BoxDecoration(
-                                                color: cat.color.withOpacity(0.12),
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: Icon(cat.icon,
-                                                  size: 14, color: cat.color),
-                                            ),
-                                            const Gap(8),
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(e.title,
-                                                    style: const TextStyle(
-                                                        fontSize: 12,
-                                                        fontWeight: FontWeight.w600)),
-                                                Text('₹${e.amount.toStringAsFixed(0)}',
-                                                    style: const TextStyle(
-                                                        fontSize: 11,
-                                                        color: kTextSecondary)),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-
-                const Gap(20),
-
-                // ── Today / Week stats + recent ──
+                // ── Today / Week quick stats ───────────────────────────────
                 summaryAsync.when(
                   loading: () => const SizedBox(),
                   error: (_, __) => const SizedBox(),
-                  data: (summary) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SectionHeader(title: 'SPENDING'),
-                      const Gap(8),
-                      Row(
-                        children: [
-                          Expanded(
-                              child: StatCard(
-                                  label: 'Today',
-                                  value: formatCurrency(summary.todayTotal))),
-                          const Gap(10),
-                          Expanded(
-                              child: StatCard(
-                                  label: 'This Week',
-                                  value: formatCurrency(summary.weekTotal))),
-                        ],
-                      ),
-                      if (summary.recent.isNotEmpty) ...[
-                        const Gap(16),
-                        const SectionHeader(title: 'RECENT'),
-                        const Gap(8),
-                        ...summary.recent.map((e) => _RecentRow(
-                              expense: e,
-                              onRepeat: () =>
-                                  _addExpense(title: e.title, amount: e.amount),
-                            )),
-                      ] else ...[
-                        const Gap(16),
-                        Center(
-                          child: Text('No expenses yet.',
-                              style: TextStyle(color: kTextSecondary)),
+                  data: (summary) => Row(children: [
+                    Expanded(child: _SmallStat(
+                      label: 'Today',
+                      value: formatCurrency(summary.todayTotal),
+                      icon: Icons.today_rounded,
+                      color: const Color(0xFFF97316),
+                    )),
+                    const Gap(10),
+                    Expanded(child: _SmallStat(
+                      label: 'This Week',
+                      value: formatCurrency(summary.weekTotal),
+                      icon: Icons.date_range_rounded,
+                      color: kPrimary,
+                    )),
+                  ]),
+                ),
+
+                const Gap(20),
+
+                // ── Recent transactions ────────────────────────────────────
+                summaryAsync.when(
+                  loading: () => const SizedBox(),
+                  error: (_, __) => const SizedBox(),
+                  data: (summary) {
+                    if (summary.recent.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 24),
+                          child: Column(
+                            children: [
+                              Icon(Icons.receipt_long_outlined,
+                                  size: 48,
+                                  color: kTextSecondary.withOpacity(0.4)),
+                              const Gap(12),
+                              const Text('No transactions yet',
+                                  style: TextStyle(
+                                      color: kTextSecondary, fontSize: 15)),
+                            ],
+                          ),
                         ),
+                      );
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SectionHeader(title: 'RECENT TRANSACTIONS'),
+                        const Gap(8),
+                        ...summary.recent.map((e) => _RecentTile(expense: e)),
                       ],
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -400,77 +199,325 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 }
 
-class _HeroStat extends StatelessWidget {
-  final String label;
-  final String value;
-  const _HeroStat({required this.label, required this.value});
+// ── Cash card ─────────────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(color: Colors.white60, fontSize: 11)),
-        Text(value,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-}
+class _CashCard extends StatelessWidget {
+  final TextEditingController ctrl;
+  final bool updating;
+  final VoidCallback onEditStart;
+  final VoidCallback onSave;
 
-class _RecentRow extends StatelessWidget {
-  final Expense expense;
-  final VoidCallback onRepeat;
-  const _RecentRow({required this.expense, required this.onRepeat});
+  const _CashCard({
+    required this.ctrl,
+    required this.updating,
+    required this.onEditStart,
+    required this.onSave,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: kPad, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(kPad, 14, 8, 14),
       decoration: BoxDecoration(
-          color: kCard,
-          borderRadius: BorderRadius.circular(kRadius),
-          border: Border.all(color: kDivider)),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(expense.title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w500, fontSize: 14)),
-                Text(relativeDate(expense.timestamp),
-                    style:
-                        const TextStyle(color: kTextSecondary, fontSize: 12)),
-              ],
-            ),
-          ),
-          Text('−₹${expense.amount.toStringAsFixed(0)}',
-              style: const TextStyle(
-                  fontWeight: FontWeight.w700, fontSize: 14, color: kLoss)),
-          const Gap(8),
-          GestureDetector(
-            onTap: onRepeat,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                  color: kPrimaryLight,
-                  borderRadius: BorderRadius.circular(20)),
-              child: const Text('+Again',
-                  style: TextStyle(
-                      color: kPrimary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600)),
-            ),
-          ),
-        ],
+        color: kCard,
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        border: Border.all(color: kDivider),
       ),
+      child: Row(children: [
+        Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+            color: kPrimary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(Icons.account_balance_wallet_rounded,
+              color: kPrimary, size: 20),
+        ),
+        const Gap(12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('CASH ON HAND',
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: kTextSecondary,
+                    letterSpacing: 0.6)),
+            const Gap(2),
+            Row(children: [
+              const Text('₹',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: kTextSecondary)),
+              const Gap(4),
+              Expanded(
+                child: TextField(
+                  controller: ctrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
+                  ],
+                  textInputAction: TextInputAction.done,
+                  onTap: onEditStart,
+                  onSubmitted: (_) => onSave(),
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w700),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    fillColor: Colors.transparent,
+                    hintText: '0',
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+        updating
+            ? const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            : IconButton(
+                icon: const Icon(Icons.check_circle_rounded, color: kGain),
+                tooltip: 'Save cash balance',
+                onPressed: onSave,
+              ),
+      ]),
+    );
+  }
+}
+
+// ── Monthly summary card ──────────────────────────────────────────────────────
+
+class _MonthlySummaryCard extends StatelessWidget {
+  final DashboardSummary summary;
+  const _MonthlySummaryCard({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final net = summary.monthNet;
+    final netPositive = net >= 0;
+
+    return Container(
+      padding: const EdgeInsets.all(kPad),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        border: Border.all(color: kDivider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('THIS MONTH',
+            style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: kTextSecondary,
+                letterSpacing: 0.6)),
+        const Gap(12),
+        Row(children: [
+          // Income
+          Expanded(child: _SummaryPill(
+            label: 'Income',
+            value: summary.monthIncome,
+            color: kGain,
+            icon: Icons.arrow_downward_rounded,
+          )),
+          const Gap(10),
+          // Expenses
+          Expanded(child: _SummaryPill(
+            label: 'Expenses',
+            value: summary.monthExpenses,
+            color: kLoss,
+            icon: Icons.arrow_upward_rounded,
+          )),
+        ]),
+        const Gap(12),
+        const Divider(height: 1),
+        const Gap(12),
+        // Net row
+        Row(children: [
+          const Text('Net Balance',
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: kTextSecondary)),
+          const Spacer(),
+          Text(
+            '${netPositive ? '+' : ''}${formatCurrency(net)}',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: netPositive ? kGain : kLoss,
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _SummaryPill extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+  final IconData icon;
+  const _SummaryPill({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(kRadius),
+      ),
+      child: Row(children: [
+        Container(
+          width: 28, height: 28,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 14, color: color),
+        ),
+        const Gap(8),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+            const Gap(1),
+            Text(formatCurrency(value),
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: color),
+                overflow: TextOverflow.ellipsis),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Small stat card ───────────────────────────────────────────────────────────
+
+class _SmallStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  const _SmallStat({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: kPad, vertical: 12),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(kRadius),
+        border: Border.all(color: kDivider),
+      ),
+      child: Row(children: [
+        Icon(icon, size: 18, color: color),
+        const Gap(10),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11, color: kTextSecondary, fontWeight: FontWeight.w500)),
+          const Gap(2),
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w700)),
+        ]),
+      ]),
+    );
+  }
+}
+
+// ── Monthly summary shimmer (loading) ─────────────────────────────────────────
+
+class _MonthlySummaryShimmer extends StatelessWidget {
+  const _MonthlySummaryShimmer();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 120,
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        border: Border.all(color: kDivider),
+      ),
+      child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+    );
+  }
+}
+
+// ── Recent transaction tile ───────────────────────────────────────────────────
+
+class _RecentTile extends StatelessWidget {
+  final Expense expense;
+  const _RecentTile({required this.expense});
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = _metaFor(expense);
+    final isIncome = expense.isIncome;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(kRadius),
+        border: Border.all(color: kDivider),
+      ),
+      child: Row(children: [
+        Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+            color: meta.color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(meta.icon, size: 20, color: meta.color),
+        ),
+        const Gap(12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(expense.title,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600, fontSize: 14)),
+            const Gap(2),
+            Text(relativeDate(expense.timestamp),
+                style: const TextStyle(color: kTextSecondary, fontSize: 12)),
+          ]),
+        ),
+        Text(
+          isIncome
+              ? '+${formatCurrency(expense.amount)}'
+              : '−${formatCurrency(expense.amount)}',
+          style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              color: isIncome ? kGain : kLoss),
+        ),
+      ]),
     );
   }
 }

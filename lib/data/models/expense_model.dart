@@ -5,6 +5,7 @@ class Expense {
   final DateTime timestamp;
   final String? category;
   final String? notes;
+  final bool isIncome;
 
   const Expense({
     this.id,
@@ -13,6 +14,7 @@ class Expense {
     required this.timestamp,
     this.category,
     this.notes,
+    this.isIncome = false,
   });
 
   Expense copyWith({
@@ -21,6 +23,7 @@ class Expense {
     DateTime? timestamp,
     String? category,
     String? notes,
+    bool? isIncome,
   }) {
     return Expense(
       id: id,
@@ -29,6 +32,7 @@ class Expense {
       timestamp: timestamp ?? this.timestamp,
       category: category ?? this.category,
       notes: notes ?? this.notes,
+      isIncome: isIncome ?? this.isIncome,
     );
   }
 
@@ -39,6 +43,7 @@ class Expense {
         'timestamp': timestamp.toIso8601String(),
         'category': category,
         'notes': notes,
+        'is_income': isIncome ? 1 : 0,
       };
 
   factory Expense.fromMap(Map<String, dynamic> map) => Expense(
@@ -48,5 +53,6 @@ class Expense {
         timestamp: DateTime.parse(map['timestamp'] as String),
         category: map['category'] as String?,
         notes: map['notes'] as String?,
+        isIncome: (map['is_income'] as int? ?? 0) == 1,
       );
 }

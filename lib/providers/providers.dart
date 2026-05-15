@@ -8,6 +8,7 @@ import '../data/models/user_settings_model.dart';
 import '../data/repositories/expense_repository.dart';
 import '../data/repositories/investment_repository.dart';
 import '../data/repositories/settings_repository.dart';
+import '../data/services/fmp_service.dart';
 import '../data/services/gemini_service.dart';
 import '../data/services/nav_service.dart';
 
@@ -96,16 +97,18 @@ class ExpensesNotifier extends StateNotifier<AsyncValue<List<Expense>>> {
     _ref.invalidate(dashboardSummaryProvider);
   }
 
-  Future<void> update(Expense updated, double oldAmount) async {
-    await _repo.updateExpense(updated, oldAmount);
+  Future<void> update(Expense updated, double oldAmount, bool wasIncome) async {
+    await _repo.updateExpense(updated, oldAmount, wasIncome);
     await load();
     _ref.read(settingsProvider.notifier).load();
+    _ref.invalidate(dashboardSummaryProvider);
   }
 
   Future<void> delete(Expense e) async {
     await _repo.deleteExpense(e);
     await load();
     _ref.read(settingsProvider.notifier).load();
+    _ref.invalidate(dashboardSummaryProvider);
   }
 }
 
@@ -119,24 +122,35 @@ final dashboardSummaryProvider = FutureProvider<DashboardSummary>((ref) async {
   final repo = ref.read(expenseRepoProvider);
   final today = await repo.getTotalForToday();
   final week = await repo.getTotalForWeek();
-  final recent = await repo.getRecentExpenses(5);
+  final monthIncome = await repo.getMonthIncome();
+  final monthExpenses = await repo.getMonthExpenses();
+  final recent = await repo.getRecentExpenses(10);
   final quickRepeat = await repo.getRecentDistinct(5);
   return DashboardSummary(
-      todayTotal: today,
-      weekTotal: week,
-      recent: recent,
-      quickRepeat: quickRepeat);
+    todayTotal: today,
+    weekTotal: week,
+    monthIncome: monthIncome,
+    monthExpenses: monthExpenses,
+    recent: recent,
+    quickRepeat: quickRepeat,
+  );
 });
 
 class DashboardSummary {
   final double todayTotal;
   final double weekTotal;
+  final double monthIncome;
+  final double monthExpenses;
   final List<Expense> recent;
-  final List<Expense> quickRepeat; // distinct recent for repeat chips
+  final List<Expense> quickRepeat;
+
+  double get monthNet => monthIncome - monthExpenses;
 
   const DashboardSummary({
     required this.todayTotal,
     required this.weekTotal,
+    required this.monthIncome,
+    required this.monthExpenses,
     required this.recent,
     required this.quickRepeat,
   });
@@ -197,12 +211,12 @@ class InvestmentsNotifier
   }
 
   /// Refresh price for one asset.
-  /// Uses mfapi.in NAV (exact) if eligible, otherwise Gemini (estimate).
+  /// Uses mfapi.in NAV (exact) if eligible, FMP for stocks/ETFs, otherwise Gemini (estimate).
   /// Returns error string or null on success.
   Future<String?> refreshOne(InvestmentAsset asset) async {
     if (asset.id == null) return 'Invalid asset';
 
-    // 1. Try exact NAV from mfapi.in
+    // 1. Try exact NAV from mfapi.in (mutual funds with scheme code)
     if (NavService.isEligible(asset)) {
       final nav = await NavService.calculate(asset);
       if (nav != null && nav.success) {
@@ -212,7 +226,17 @@ class InvestmentsNotifier
       }
     }
 
-    // 2. Fall back to Gemini estimate
+    // 2. Try real market price from FMP (stocks, ETFs)
+    if (FmpService.isEligible(asset)) {
+      final fmp = await FmpService.calculate(asset);
+      if (fmp != null && fmp.success) {
+        await _repo.updateValue(asset.id!, fmp.currentValue, DateTime.now());
+        await load();
+        return null;
+      }
+    }
+
+    // 3. Fall back to Gemini estimate
     final key = await _ref.read(settingsRepoProvider).getGeminiApiKey();
     if (key == null || key.isEmpty) return 'Gemini API key not set in Settings';
     final settings = _ref.read(settingsProvider).value;

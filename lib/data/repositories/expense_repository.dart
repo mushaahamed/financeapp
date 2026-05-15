@@ -1,7 +1,7 @@
 import '../database/database_helper.dart';
 import '../models/expense_model.dart';
 
-enum ExpenseFilter { all, today, thisWeek, thisMonth }
+enum ExpenseFilter { all, today, thisWeek, thisMonth, thisYear }
 
 class ExpenseRepository {
   final DatabaseHelper _db;
@@ -21,6 +21,9 @@ class ExpenseRepository {
         return _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
       case ExpenseFilter.thisMonth:
         final start = DateTime(now.year, now.month, 1);
+        return _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
+      case ExpenseFilter.thisYear:
+        final start = DateTime(now.year, 1, 1);
         return _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
     }
   }
@@ -90,18 +93,36 @@ class ExpenseRepository {
 
   Future<int> addExpense(Expense e) async {
     final id = await _db.insertExpense(e);
-    await _db.adjustCash(-e.amount);
+    // Income adds to cash, expense deducts
+    await _db.adjustCash(e.isIncome ? e.amount : -e.amount);
     return id;
   }
 
-  Future<void> updateExpense(Expense updated, double oldAmount) async {
+  Future<void> updateExpense(Expense updated, double oldAmount, bool wasIncome) async {
     await _db.updateExpense(updated);
-    final diff = updated.amount - oldAmount;
-    if (diff != 0) await _db.adjustCash(-diff);
+    // Reverse old effect
+    await _db.adjustCash(wasIncome ? -oldAmount : oldAmount);
+    // Apply new effect
+    await _db.adjustCash(updated.isIncome ? updated.amount : -updated.amount);
   }
 
   Future<void> deleteExpense(Expense e) async {
     await _db.deleteExpense(e.id!);
-    await _db.adjustCash(e.amount);
+    // Reverse the effect
+    await _db.adjustCash(e.isIncome ? -e.amount : e.amount);
+  }
+
+  Future<double> getMonthIncome() async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, 1);
+    final list = await _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
+    return list.where((e) => e.isIncome).fold<double>(0.0, (s, e) => s + e.amount);
+  }
+
+  Future<double> getMonthExpenses() async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, 1);
+    final list = await _db.getExpensesBetween(start, now.add(const Duration(days: 1)));
+    return list.where((e) => !e.isIncome).fold<double>(0.0, (s, e) => s + e.amount);
   }
 }

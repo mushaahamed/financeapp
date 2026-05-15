@@ -124,3 +124,14 @@ const kExpenseCategories = [
   'Bills',
   'Other',
 ];
+
+const kIncomeCategories = [
+  'Salary',
+  'Freelance / Consulting',
+  'Business',
+  'Investment Returns',
+  'Rental Income',
+  'Gift / Bonus',
+  'Refund',
+  'Other Income',
+];
