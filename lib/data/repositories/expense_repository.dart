@@ -1,6 +1,23 @@
 import '../database/database_helper.dart';
 import '../models/expense_model.dart';
 
+class MonthlyStats {
+  final int year;
+  final int month;
+  final double income;
+  final double expenses;
+
+  double get net => income - expenses;
+  double get savingsRate => income > 0 ? (net / income * 100).clamp(0, 100) : 0;
+
+  const MonthlyStats({
+    required this.year,
+    required this.month,
+    required this.income,
+    required this.expenses,
+  });
+}
+
 enum ExpenseFilter { all, today, thisWeek, thisMonth, thisYear }
 
 class ExpenseRepository {
@@ -110,6 +127,27 @@ class ExpenseRepository {
     await _db.deleteExpense(e.id!);
     // Reverse the effect
     await _db.adjustCash(e.isIncome ? -e.amount : e.amount);
+  }
+
+  /// Last [n] calendar months — income, expenses, and savings rate per month.
+  Future<List<MonthlyStats>> getLastNMonths(int n) async {
+    final now = DateTime.now();
+    final result = <MonthlyStats>[];
+    for (int i = n - 1; i >= 0; i--) {
+      final year = now.month - i <= 0
+          ? now.year - 1
+          : now.year;
+      final month = ((now.month - i - 1) % 12) + 1;
+      final from = DateTime(year, month, 1);
+      final to = DateTime(year, month + 1, 1);
+      final list = await _db.getExpensesBetween(from, to);
+      final income =
+          list.where((e) => e.isIncome).fold<double>(0, (s, e) => s + e.amount);
+      final expenses =
+          list.where((e) => !e.isIncome).fold<double>(0, (s, e) => s + e.amount);
+      result.add(MonthlyStats(year: year, month: month, income: income, expenses: expenses));
+    }
+    return result;
   }
 
   Future<double> getMonthIncome() async {

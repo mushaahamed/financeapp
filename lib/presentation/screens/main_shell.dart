@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'expenses/expenses_screen.dart';
+import 'goals/goals_screen.dart';
 import 'investments/investments_screen.dart';
 import 'reports/reports_screen.dart';
 
@@ -15,6 +16,7 @@ class MainShell extends ConsumerWidget {
     DashboardScreen(),
     ExpensesScreen(),
     InvestmentsScreen(),
+    GoalsScreen(),
     ReportsScreen(),
   ];
 
@@ -31,21 +33,28 @@ class MainShell extends ConsumerWidget {
           currentIndex: idx,
           onTap: (i) => ref.read(_tabIndexProvider.notifier).state = i,
           type: BottomNavigationBarType.fixed,
+          selectedFontSize: 11,
+          unselectedFontSize: 11,
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
               activeIcon: Icon(Icons.home_rounded),
-              label: 'Dashboard',
+              label: 'Home',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.receipt_long_outlined),
               activeIcon: Icon(Icons.receipt_long_rounded),
-              label: 'Expenses',
+              label: 'Transactions',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.show_chart_outlined),
               activeIcon: Icon(Icons.show_chart_rounded),
               label: 'Investments',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.flag_outlined),
+              activeIcon: Icon(Icons.flag_rounded),
+              label: 'Goals',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.pie_chart_outline_rounded),

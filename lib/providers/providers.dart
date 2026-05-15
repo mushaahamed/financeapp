@@ -3,10 +3,14 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/constants.dart';
 import '../data/database/database_helper.dart';
 import '../data/models/expense_model.dart';
+import '../data/models/goal_model.dart';
 import '../data/models/investment_asset_model.dart';
+import '../data/models/liability_model.dart';
 import '../data/models/user_settings_model.dart';
 import '../data/repositories/expense_repository.dart';
+import '../data/repositories/goal_repository.dart';
 import '../data/repositories/investment_repository.dart';
+import '../data/repositories/liability_repository.dart';
 import '../data/repositories/settings_repository.dart';
 import '../data/services/fmp_service.dart';
 import '../data/services/gemini_service.dart';
@@ -29,6 +33,12 @@ final expenseRepoProvider = Provider<ExpenseRepository>(
 
 final investmentRepoProvider = Provider<InvestmentRepository>(
     (ref) => InvestmentRepository(ref.read(dbProvider)));
+
+final goalRepoProvider =
+    Provider<GoalRepository>((ref) => GoalRepository(ref.read(dbProvider)));
+
+final liabilityRepoProvider = Provider<LiabilityRepository>(
+    (ref) => LiabilityRepository(ref.read(dbProvider)));
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
@@ -145,6 +155,8 @@ class DashboardSummary {
   final List<Expense> quickRepeat;
 
   double get monthNet => monthIncome - monthExpenses;
+  double get savingsRate =>
+      monthIncome > 0 ? (monthNet / monthIncome * 100).clamp(0, 100) : 0;
 
   const DashboardSummary({
     required this.todayTotal,
@@ -179,13 +191,11 @@ class InvestmentsNotifier
     _ref.read(settingsProvider.notifier).load();
   }
 
-  /// Manually set the current value for an asset (user override).
   Future<void> updateValue(int id, double value) async {
     await _repo.updateValue(id, value, DateTime.now());
     await load();
   }
 
-  /// Adds an investment and returns the new DB id (for auto-refresh after add).
   Future<int?> addAndGetId(InvestmentAsset a) async {
     final id = await _repo.add(a);
     await load();
@@ -210,13 +220,9 @@ class InvestmentsNotifier
     _ref.read(settingsProvider.notifier).load();
   }
 
-  /// Refresh price for one asset.
-  /// Uses mfapi.in NAV (exact) if eligible, FMP for stocks/ETFs, otherwise Gemini (estimate).
-  /// Returns error string or null on success.
   Future<String?> refreshOne(InvestmentAsset asset) async {
     if (asset.id == null) return 'Invalid asset';
 
-    // 1. Try exact NAV from mfapi.in (mutual funds with scheme code)
     if (NavService.isEligible(asset)) {
       final nav = await NavService.calculate(asset);
       if (nav != null && nav.success) {
@@ -226,7 +232,6 @@ class InvestmentsNotifier
       }
     }
 
-    // 2. Try real market price from FMP (stocks, ETFs)
     if (FmpService.isEligible(asset)) {
       final fmp = await FmpService.calculate(asset);
       if (fmp != null && fmp.success) {
@@ -236,7 +241,6 @@ class InvestmentsNotifier
       }
     }
 
-    // 3. Fall back to Gemini estimate
     final key = await _ref.read(settingsRepoProvider).getGeminiApiKey();
     if (key == null || key.isEmpty) return 'Gemini API key not set in Settings';
     final settings = _ref.read(settingsProvider).value;
@@ -251,19 +255,16 @@ class InvestmentsNotifier
     return result.error;
   }
 
-  /// Refresh all assets. Returns last error string or null if all succeeded.
   Future<String?> refreshAll() async {
     final assets = state.value ?? [];
     String? lastError;
 
-    // Fetch Gemini key once (only needed for non-mfapi assets)
     String? geminiKey;
     GeminiService? gemini;
 
     for (final a in assets) {
       if (a.id == null) continue;
 
-      // Try exact NAV first
       if (NavService.isEligible(a)) {
         final nav = await NavService.calculate(a);
         if (nav != null && nav.success) {
@@ -272,7 +273,14 @@ class InvestmentsNotifier
         }
       }
 
-      // Fall back to Gemini
+      if (FmpService.isEligible(a)) {
+        final fmp = await FmpService.calculate(a);
+        if (fmp != null && fmp.success) {
+          await _repo.updateValue(a.id!, fmp.currentValue, DateTime.now());
+          continue;
+        }
+      }
+
       geminiKey ??= await _ref.read(settingsRepoProvider).getGeminiApiKey();
       if (geminiKey == null || geminiKey.isEmpty) {
         lastError = 'Gemini API key not set — non-fund assets skipped';
@@ -356,7 +364,7 @@ final expenseCategoryProvider =
   final repo = ref.read(expenseRepoProvider);
   final expenses = await repo.getExpenses(filter);
   final map = <String, double>{};
-  for (final e in expenses) {
+  for (final e in expenses.where((e) => !e.isIncome)) {
     final cat = e.category ?? 'Other';
     map[cat] = (map[cat] ?? 0) + e.amount;
   }
@@ -378,9 +386,175 @@ class CategoryTotal {
 final priceRefreshingProvider = StateProvider<bool>((ref) => false);
 
 // ─── Live NAV for a single mfapi scheme code ─────────────────────────────────
-// Used in AssetDetailScreen to show current NAV even without investment date.
 
 final currentNavProvider =
     FutureProvider.family<double?, String>((ref, schemeCode) async {
   return NavService.fetchCurrentNav(schemeCode);
 });
+
+// ─── Goals ───────────────────────────────────────────────────────────────────
+
+class GoalsNotifier extends StateNotifier<AsyncValue<List<Goal>>> {
+  final GoalRepository _repo;
+
+  GoalsNotifier(this._repo) : super(const AsyncValue.loading()) {
+    load();
+  }
+
+  Future<void> load() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(_repo.getAll);
+  }
+
+  Future<void> add(Goal g) async {
+    await _repo.add(g);
+    await load();
+  }
+
+  Future<void> update(Goal g) async {
+    await _repo.update(g);
+    await load();
+  }
+
+  Future<void> delete(int id) async {
+    await _repo.delete(id);
+    await load();
+  }
+
+  Future<void> addToSaved(int id, double amount) async {
+    await _repo.addToSaved(id, amount);
+    await load();
+  }
+}
+
+final goalsProvider =
+    StateNotifierProvider<GoalsNotifier, AsyncValue<List<Goal>>>(
+        (ref) => GoalsNotifier(ref.read(goalRepoProvider)));
+
+// ─── Liabilities ─────────────────────────────────────────────────────────────
+
+class LiabilitiesNotifier extends StateNotifier<AsyncValue<List<Liability>>> {
+  final LiabilityRepository _repo;
+
+  LiabilitiesNotifier(this._repo) : super(const AsyncValue.loading()) {
+    load();
+  }
+
+  Future<void> load() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(_repo.getAll);
+  }
+
+  Future<void> add(Liability l) async {
+    await _repo.add(l);
+    await load();
+  }
+
+  Future<void> update(Liability l) async {
+    await _repo.update(l);
+    await load();
+  }
+
+  Future<void> delete(int id) async {
+    await _repo.delete(id);
+    await load();
+  }
+
+  Future<void> makePayment(int id, double amount) async {
+    await _repo.makePayment(id, amount);
+    await load();
+  }
+}
+
+final liabilitiesProvider =
+    StateNotifierProvider<LiabilitiesNotifier, AsyncValue<List<Liability>>>(
+        (ref) => LiabilitiesNotifier(ref.read(liabilityRepoProvider)));
+
+// ─── Monthly trends (last 6 months) ──────────────────────────────────────────
+
+final monthlyTrendsProvider = FutureProvider<List<MonthlyStats>>((ref) {
+  return ref.read(expenseRepoProvider).getLastNMonths(6);
+});
+
+// ─── Net worth snapshots ──────────────────────────────────────────────────────
+
+final netWorthSnapshotsProvider =
+    FutureProvider<List<NetWorthSnapshot>>((ref) {
+  return ref.read(dbProvider).getNetWorthHistory(90);
+});
+
+// ─── Financial health ─────────────────────────────────────────────────────────
+
+final financialHealthProvider = Provider<FinancialHealth>((ref) {
+  final summary = ref.watch(dashboardSummaryProvider).value;
+  final settings = ref.watch(settingsProvider).value;
+  final liabilities = ref.watch(liabilitiesProvider).value ?? [];
+
+  final monthIncome = summary?.monthIncome ?? 0;
+  final monthExpenses = summary?.monthExpenses ?? 0;
+  final cash = settings?.currentCash ?? 0;
+
+  final savingsRate = monthIncome > 0
+      ? ((monthIncome - monthExpenses) / monthIncome * 100).clamp(0.0, 100.0)
+      : 0.0;
+
+  // Emergency fund in months (cash / avg monthly expenses)
+  final emergencyMonths =
+      monthExpenses > 0 ? (cash / monthExpenses) : 0.0;
+
+  final totalDebt =
+      liabilities.fold<double>(0, (s, l) => s + l.outstandingBalance);
+  final totalEmi =
+      liabilities.fold<double>(0, (s, l) => s + (l.emiAmount ?? 0));
+  final debtToIncome =
+      monthIncome > 0 ? (totalEmi / monthIncome * 100) : 0.0;
+
+  return FinancialHealth(
+    savingsRate: savingsRate,
+    emergencyFundMonths: emergencyMonths,
+    totalDebt: totalDebt,
+    totalMonthlyEmi: totalEmi,
+    debtToIncomeRatio: debtToIncome,
+  );
+});
+
+class FinancialHealth {
+  final double savingsRate;
+  final double emergencyFundMonths;
+  final double totalDebt;
+  final double totalMonthlyEmi;
+  final double debtToIncomeRatio;
+
+  const FinancialHealth({
+    required this.savingsRate,
+    required this.emergencyFundMonths,
+    required this.totalDebt,
+    required this.totalMonthlyEmi,
+    required this.debtToIncomeRatio,
+  });
+
+  /// 0–100 score based on savings rate, emergency fund, debt
+  int get score {
+    int s = 0;
+    if (savingsRate >= 20) s += 40;
+    else if (savingsRate >= 10) s += 20;
+    else if (savingsRate > 0) s += 10;
+
+    if (emergencyFundMonths >= 6) s += 30;
+    else if (emergencyFundMonths >= 3) s += 20;
+    else if (emergencyFundMonths >= 1) s += 10;
+
+    if (debtToIncomeRatio == 0) s += 30;
+    else if (debtToIncomeRatio <= 20) s += 20;
+    else if (debtToIncomeRatio <= 40) s += 10;
+
+    return s;
+  }
+
+  String get scoreLabel {
+    if (score >= 80) return 'Excellent';
+    if (score >= 60) return 'Good';
+    if (score >= 40) return 'Fair';
+    return 'Needs Attention';
+  }
+}

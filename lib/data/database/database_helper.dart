@@ -3,6 +3,32 @@ import 'package:path/path.dart';
 import '../models/user_settings_model.dart';
 import '../models/expense_model.dart';
 import '../models/investment_asset_model.dart';
+import '../models/goal_model.dart';
+import '../models/liability_model.dart';
+
+class NetWorthSnapshot {
+  final String date;
+  final double cash;
+  final double investments;
+  final double liabilities;
+  final double netWorth;
+
+  const NetWorthSnapshot({
+    required this.date,
+    required this.cash,
+    required this.investments,
+    required this.liabilities,
+    required this.netWorth,
+  });
+
+  factory NetWorthSnapshot.fromMap(Map<String, dynamic> m) => NetWorthSnapshot(
+        date: m['date'] as String,
+        cash: (m['cash'] as num).toDouble(),
+        investments: (m['investments'] as num).toDouble(),
+        liabilities: (m['liabilities'] as num).toDouble(),
+        netWorth: (m['net_worth'] as num).toDouble(),
+      );
+}
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -19,7 +45,7 @@ class DatabaseHelper {
   Future<Database> _initDb() async {
     final path = join(await getDatabasesPath(), 'paisa_v2.db');
     return openDatabase(path,
-        version: 3, onCreate: _create, onUpgrade: _upgrade);
+        version: 4, onCreate: _create, onUpgrade: _upgrade);
   }
 
   Future<void> _upgrade(Database db, int oldVersion, int newVersion) async {
@@ -28,7 +54,46 @@ class DatabaseHelper {
           'ALTER TABLE investments ADD COLUMN invested_at TEXT');
     }
     if (oldVersion < 3) {
-      await db.execute('ALTER TABLE expenses ADD COLUMN is_income INTEGER NOT NULL DEFAULT 0');
+      await db.execute(
+          'ALTER TABLE expenses ADD COLUMN is_income INTEGER NOT NULL DEFAULT 0');
+    }
+    if (oldVersion < 4) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS goals (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          target_amount REAL NOT NULL,
+          saved_amount REAL NOT NULL DEFAULT 0,
+          category TEXT NOT NULL DEFAULT 'Other',
+          deadline TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS liabilities (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL DEFAULT 'other',
+          principal REAL NOT NULL DEFAULT 0,
+          outstanding_balance REAL NOT NULL DEFAULT 0,
+          emi_amount REAL,
+          interest_rate REAL,
+          start_date TEXT,
+          end_date TEXT,
+          notes TEXT
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS net_worth_snapshots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL UNIQUE,
+          cash REAL NOT NULL DEFAULT 0,
+          investments REAL NOT NULL DEFAULT 0,
+          liabilities REAL NOT NULL DEFAULT 0,
+          net_worth REAL NOT NULL DEFAULT 0
+        )
+      ''');
     }
   }
 
@@ -71,6 +136,45 @@ class DatabaseHelper {
         invested_at TEXT,
         last_updated_at TEXT,
         notes TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE goals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        target_amount REAL NOT NULL,
+        saved_amount REAL NOT NULL DEFAULT 0,
+        category TEXT NOT NULL DEFAULT 'Other',
+        deadline TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE liabilities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'other',
+        principal REAL NOT NULL DEFAULT 0,
+        outstanding_balance REAL NOT NULL DEFAULT 0,
+        emi_amount REAL,
+        interest_rate REAL,
+        start_date TEXT,
+        end_date TEXT,
+        notes TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE net_worth_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL UNIQUE,
+        cash REAL NOT NULL DEFAULT 0,
+        investments REAL NOT NULL DEFAULT 0,
+        liabilities REAL NOT NULL DEFAULT 0,
+        net_worth REAL NOT NULL DEFAULT 0
       )
     ''');
   }
@@ -190,5 +294,90 @@ class DatabaseHelper {
     await db.rawUpdate(
         'UPDATE investments SET amount_invested = amount_invested + ? WHERE id = ?',
         [extraAmount, id]);
+  }
+
+  // ─── Goals ───────────────────────────────────────────────────────────────────
+
+  Future<List<Goal>> getAllGoals() async {
+    final db = await database;
+    final rows = await db.query('goals', orderBy: 'created_at ASC');
+    return rows.map(Goal.fromMap).toList();
+  }
+
+  Future<int> insertGoal(Goal g) async {
+    final db = await database;
+    return db.insert('goals', g.toMap());
+  }
+
+  Future<void> updateGoal(Goal g) async {
+    final db = await database;
+    await db.update('goals', g.toMap(), where: 'id = ?', whereArgs: [g.id]);
+  }
+
+  Future<void> deleteGoal(int id) async {
+    final db = await database;
+    await db.delete('goals', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ─── Liabilities ─────────────────────────────────────────────────────────────
+
+  Future<List<Liability>> getAllLiabilities() async {
+    final db = await database;
+    final rows = await db.query('liabilities', orderBy: 'name ASC');
+    return rows.map(Liability.fromMap).toList();
+  }
+
+  Future<int> insertLiability(Liability l) async {
+    final db = await database;
+    return db.insert('liabilities', l.toMap());
+  }
+
+  Future<void> updateLiability(Liability l) async {
+    final db = await database;
+    await db.update('liabilities', l.toMap(),
+        where: 'id = ?', whereArgs: [l.id]);
+  }
+
+  Future<void> deleteLiability(int id) async {
+    final db = await database;
+    await db.delete('liabilities', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ─── Net Worth Snapshots ──────────────────────────────────────────────────────
+
+  Future<void> upsertNetWorthSnapshot({
+    required double cash,
+    required double investments,
+    required double liabilities,
+    required DateTime date,
+  }) async {
+    final db = await database;
+    final dateStr =
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    await db.insert(
+      'net_worth_snapshots',
+      {
+        'date': dateStr,
+        'cash': cash,
+        'investments': investments,
+        'liabilities': liabilities,
+        'net_worth': cash + investments - liabilities,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<NetWorthSnapshot>> getNetWorthHistory(int days) async {
+    final db = await database;
+    final since = DateTime.now().subtract(Duration(days: days));
+    final sinceStr =
+        '${since.year}-${since.month.toString().padLeft(2, '0')}-${since.day.toString().padLeft(2, '0')}';
+    final rows = await db.query(
+      'net_worth_snapshots',
+      where: 'date >= ?',
+      whereArgs: [sinceStr],
+      orderBy: 'date ASC',
+    );
+    return rows.map(NetWorthSnapshot.fromMap).toList();
   }
 }

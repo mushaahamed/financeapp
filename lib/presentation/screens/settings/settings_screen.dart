@@ -1,7 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../core/constants.dart';
 import '../../../data/models/user_settings_model.dart';
 import '../../../data/services/background_service.dart';
@@ -21,6 +25,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _showApiKey = false;
   bool _saving = false;
   bool _initialized = false;
+  bool _exportingTx = false;
+  bool _exportingInv = false;
 
   static const _weekDays = [
     'Monday', 'Tuesday', 'Wednesday', 'Thursday',
@@ -271,6 +277,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ],
                   ]),
 
+                  const Gap(20),
+
+                  // ── Export Data ──
+                  _sectionHeader('EXPORT DATA'),
+                  const Gap(8),
+                  _card(children: [
+                    const Text(
+                      'Download your data as CSV files. You can open them in Excel, Google Sheets, or any spreadsheet app.',
+                      style: TextStyle(
+                          fontSize: 13, color: kTextSecondary, height: 1.4),
+                    ),
+                    const Gap(14),
+                    _ExportButton(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Export Transactions',
+                      sublabel: 'Date, title, amount, category, type',
+                      loading: _exportingTx,
+                      onTap: _exportTransactions,
+                    ),
+                    const Gap(10),
+                    _ExportButton(
+                      icon: Icons.show_chart_rounded,
+                      label: 'Export Investments',
+                      sublabel: 'Name, type, invested, current value',
+                      loading: _exportingInv,
+                      onTap: _exportInvestments,
+                    ),
+                  ]),
+
                   const Gap(28),
 
                   SizedBox(
@@ -311,6 +346,103 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  // ── CSV Export helpers ────────────────────────────────────────────────────
+
+  Future<void> _exportTransactions() async {
+    setState(() => _exportingTx = true);
+    try {
+      final repo = ref.read(expenseRepoProvider);
+      final expenses = await repo.getExpenses(ExpenseFilter.all);
+      final fmt = DateFormat('yyyy-MM-dd HH:mm');
+
+      final buf = StringBuffer();
+      buf.writeln('Date,Title,Amount,Category,Type,Notes');
+      for (final e in expenses) {
+        final row = [
+          fmt.format(e.timestamp),
+          _csvEscape(e.title),
+          e.amount.toStringAsFixed(2),
+          _csvEscape(e.category ?? ''),
+          e.isIncome ? 'Income' : 'Expense',
+          _csvEscape(e.notes ?? ''),
+        ];
+        buf.writeln(row.join(','));
+      }
+
+      final file = await _writeTempFile(
+          'paisa_transactions_${_fileDate()}.csv', buf.toString());
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        subject: 'Paisa Transactions Export',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exportingTx = false);
+    }
+  }
+
+  Future<void> _exportInvestments() async {
+    setState(() => _exportingInv = true);
+    try {
+      final repo = ref.read(investmentRepoProvider);
+      final assets = await repo.getAll();
+      final fmtDate = DateFormat('yyyy-MM-dd');
+
+      final buf = StringBuffer();
+      buf.writeln(
+          'Name,Type,Symbol,Invested (₹),Current Value (₹),Return (%),Invested Date,Notes');
+      for (final a in assets) {
+        final row = [
+          _csvEscape(a.name),
+          _csvEscape(a.type),
+          _csvEscape(a.symbol ?? ''),
+          a.amountInvested.toStringAsFixed(2),
+          a.effectiveValue.toStringAsFixed(2),
+          a.returnPct?.toStringAsFixed(2) ?? '',
+          a.investedAt != null ? fmtDate.format(a.investedAt!) : '',
+          _csvEscape(a.notes ?? ''),
+        ];
+        buf.writeln(row.join(','));
+      }
+
+      final file = await _writeTempFile(
+          'paisa_investments_${_fileDate()}.csv', buf.toString());
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        subject: 'Paisa Investments Export',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exportingInv = false);
+    }
+  }
+
+  String _csvEscape(String s) {
+    if (s.contains(',') || s.contains('"') || s.contains('\n')) {
+      return '"${s.replaceAll('"', '""')}"';
+    }
+    return s;
+  }
+
+  String _fileDate() => DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+
+  Future<File> _writeTempFile(String name, String content) async {
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/$name');
+    await file.writeAsString(content, flush: true);
+    return file;
+  }
+
   Widget _sectionHeader(String title) => Text(
         title,
         style: const TextStyle(
@@ -341,4 +473,76 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           children: children,
         ),
       );
+}
+
+// ── Export button widget ──────────────────────────────────────────────────────
+
+class _ExportButton extends StatelessWidget {
+  const _ExportButton({
+    required this.icon,
+    required this.label,
+    required this.sublabel,
+    required this.loading,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String sublabel;
+  final bool loading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: loading ? null : onTap,
+      borderRadius: BorderRadius.circular(kRadius),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: kBackground,
+          borderRadius: BorderRadius.circular(kRadius),
+          border: Border.all(color: kDivider),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: kPrimary.withAlpha(20),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 18, color: kPrimary),
+            ),
+            const Gap(12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  const Gap(2),
+                  Text(sublabel,
+                      style: const TextStyle(
+                          fontSize: 11, color: kTextSecondary)),
+                ],
+              ),
+            ),
+            const Gap(8),
+            if (loading)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              const Icon(Icons.download_outlined,
+                  size: 18, color: kTextSecondary),
+          ],
+        ),
+      ),
+    );
+  }
 }
