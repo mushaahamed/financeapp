@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/constants.dart';
 import '../../../data/models/user_settings_model.dart';
+import '../../../data/repositories/expense_repository.dart';
 import '../../../data/services/background_service.dart';
 import '../../../providers/providers.dart';
 
