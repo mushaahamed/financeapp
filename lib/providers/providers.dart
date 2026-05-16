@@ -470,6 +470,46 @@ final liabilitiesProvider =
     StateNotifierProvider<LiabilitiesNotifier, AsyncValue<List<Liability>>>(
         (ref) => LiabilitiesNotifier(ref.read(liabilityRepoProvider)));
 
+// ─── Budgets ──────────────────────────────────────────────────────────────────
+
+/// map of category → monthly limit (₹)
+final budgetsProvider = StateNotifierProvider<BudgetsNotifier, Map<String, double>>(
+    (ref) => BudgetsNotifier(ref.read(dbProvider)));
+
+class BudgetsNotifier extends StateNotifier<Map<String, double>> {
+  final DatabaseHelper _db;
+  BudgetsNotifier(this._db) : super({}) {
+    load();
+  }
+
+  Future<void> load() async {
+    state = await _db.getAllBudgets();
+  }
+
+  Future<void> set(String category, double limit) async {
+    await _db.upsertBudget(category, limit);
+    await load();
+  }
+
+  Future<void> remove(String category) async {
+    await _db.deleteBudget(category);
+    await load();
+  }
+}
+
+// ─── Category spending this month (for budget progress) ───────────────────────
+
+final categorySpendingProvider = FutureProvider<Map<String, double>>((ref) async {
+  final repo = ref.read(expenseRepoProvider);
+  final expenses = await repo.getExpenses(ExpenseFilter.thisMonth);
+  final map = <String, double>{};
+  for (final e in expenses.where((e) => !e.isIncome)) {
+    final cat = e.category ?? 'Other';
+    map[cat] = (map[cat] ?? 0) + e.amount;
+  }
+  return map;
+});
+
 // ─── Monthly trends (last 6 months) ──────────────────────────────────────────
 
 final monthlyTrendsProvider = FutureProvider<List<MonthlyStats>>((ref) {

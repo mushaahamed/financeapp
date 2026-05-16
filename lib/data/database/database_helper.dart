@@ -45,7 +45,7 @@ class DatabaseHelper {
   Future<Database> _initDb() async {
     final path = join(await getDatabasesPath(), 'paisa_v2.db');
     return openDatabase(path,
-        version: 4, onCreate: _create, onUpgrade: _upgrade);
+        version: 5, onCreate: _create, onUpgrade: _upgrade);
   }
 
   Future<void> _upgrade(Database db, int oldVersion, int newVersion) async {
@@ -95,6 +95,19 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 5) {
+      // Add payment_method to expenses
+      await db.execute(
+          'ALTER TABLE expenses ADD COLUMN payment_method TEXT');
+      // Budget limits per category
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS budgets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          category TEXT NOT NULL UNIQUE,
+          monthly_limit REAL NOT NULL
+        )
+      ''');
+    }
   }
 
   Future<void> _create(Database db, int version) async {
@@ -119,7 +132,8 @@ class DatabaseHelper {
         timestamp TEXT NOT NULL,
         category TEXT,
         notes TEXT,
-        is_income INTEGER NOT NULL DEFAULT 0
+        is_income INTEGER NOT NULL DEFAULT 0,
+        payment_method TEXT
       )
     ''');
 
@@ -175,6 +189,14 @@ class DatabaseHelper {
         investments REAL NOT NULL DEFAULT 0,
         liabilities REAL NOT NULL DEFAULT 0,
         net_worth REAL NOT NULL DEFAULT 0
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE budgets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL UNIQUE,
+        monthly_limit REAL NOT NULL
       )
     ''');
   }
@@ -341,6 +363,32 @@ class DatabaseHelper {
   Future<void> deleteLiability(int id) async {
     final db = await database;
     await db.delete('liabilities', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ─── Budgets ──────────────────────────────────────────────────────────────────
+
+  Future<Map<String, double>> getAllBudgets() async {
+    final db = await database;
+    final rows = await db.query('budgets');
+    return {
+      for (final r in rows)
+        r['category'] as String: (r['monthly_limit'] as num).toDouble()
+    };
+  }
+
+  Future<void> upsertBudget(String category, double monthlyLimit) async {
+    final db = await database;
+    await db.insert(
+      'budgets',
+      {'category': category, 'monthly_limit': monthlyLimit},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteBudget(String category) async {
+    final db = await database;
+    await db.delete('budgets',
+        where: 'category = ?', whereArgs: [category]);
   }
 
   // ─── Net Worth Snapshots ──────────────────────────────────────────────────────

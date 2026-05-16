@@ -6,6 +6,7 @@ class Expense {
   final String? category;
   final String? notes;
   final bool isIncome;
+  final String? paymentMethod;
 
   const Expense({
     this.id,
@@ -15,6 +16,7 @@ class Expense {
     this.category,
     this.notes,
     this.isIncome = false,
+    this.paymentMethod,
   });
 
   Expense copyWith({
@@ -24,6 +26,7 @@ class Expense {
     String? category,
     String? notes,
     bool? isIncome,
+    String? paymentMethod,
   }) {
     return Expense(
       id: id,
@@ -33,6 +36,7 @@ class Expense {
       category: category ?? this.category,
       notes: notes ?? this.notes,
       isIncome: isIncome ?? this.isIncome,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
     );
   }
 
@@ -44,6 +48,7 @@ class Expense {
         'category': category,
         'notes': notes,
         'is_income': isIncome ? 1 : 0,
+        'payment_method': paymentMethod,
       };
 
   factory Expense.fromMap(Map<String, dynamic> map) => Expense(
@@ -54,5 +59,6 @@ class Expense {
         category: map['category'] as String?,
         notes: map['notes'] as String?,
         isIncome: (map['is_income'] as int? ?? 0) == 1,
+        paymentMethod: map['payment_method'] as String?,
       );
 }

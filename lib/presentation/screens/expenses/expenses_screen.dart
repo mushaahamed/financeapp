@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -8,46 +7,7 @@ import '../../../core/formatters.dart';
 import '../../../data/models/expense_model.dart';
 import '../../../data/repositories/expense_repository.dart';
 import '../../../providers/providers.dart';
-
-// ── Category metadata ─────────────────────────────────────────────────────────
-
-class _Cat {
-  final String label;
-  final IconData icon;
-  final Color color;
-  const _Cat(this.label, this.icon, this.color);
-}
-
-const _expCats = [
-  _Cat('Food & Dining',  Icons.restaurant_rounded,     Color(0xFFEF4444)),
-  _Cat('Shopping',       Icons.shopping_bag_rounded,   Color(0xFFF97316)),
-  _Cat('Transport',      Icons.directions_bus_rounded, Color(0xFF3B82F6)),
-  _Cat('Health',         Icons.favorite_rounded,       Color(0xFFEC4899)),
-  _Cat('Entertainment',  Icons.movie_rounded,          Color(0xFF8B5CF6)),
-  _Cat('Bills',          Icons.receipt_long_rounded,   Color(0xFF06B6D4)),
-  _Cat('Friends',        Icons.people_rounded,         Color(0xFF10B981)),
-  _Cat('Other',          Icons.payments_rounded,       Color(0xFF64748B)),
-];
-
-const _incCats = [
-  _Cat('Salary',                 Icons.work_rounded,              Color(0xFF10B981)),
-  _Cat('Freelance / Consulting', Icons.laptop_rounded,            Color(0xFF0EA5E9)),
-  _Cat('Business',               Icons.storefront_rounded,        Color(0xFF6366F1)),
-  _Cat('Investment Returns',     Icons.trending_up_rounded,       Color(0xFF8B5CF6)),
-  _Cat('Rental Income',          Icons.home_work_rounded,         Color(0xFFF59E0B)),
-  _Cat('Gift / Bonus',           Icons.card_giftcard_rounded,     Color(0xFFEC4899)),
-  _Cat('Refund',                 Icons.replay_rounded,            Color(0xFF14B8A6)),
-  _Cat('Other Income',           Icons.payments_rounded,          Color(0xFF64748B)),
-];
-
-_Cat _expCatFor(String? label) =>
-    _expCats.firstWhere((c) => c.label == label, orElse: () => _expCats.last);
-
-_Cat _incCatFor(String? label) =>
-    _incCats.firstWhere((c) => c.label == label, orElse: () => _incCats.last);
-
-_Cat _catFor(Expense e) =>
-    e.isIncome ? _incCatFor(e.category) : _expCatFor(e.category);
+import '../../widgets/add_transaction_sheet.dart';
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -79,16 +39,22 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
   }
 
   @override
-  void dispose() { _tabs.dispose(); super.dispose(); }
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
 
   Future<void> _loadMonth() async {
-    final dates = await ref.read(expenseRepoProvider)
-        .getDatesWithExpensesInMonth(_focusedMonth.year, _focusedMonth.month);
+    final dates = await ref
+        .read(expenseRepoProvider)
+        .getDatesWithExpensesInMonth(
+            _focusedMonth.year, _focusedMonth.month);
     if (mounted) setState(() => _datesWithExpenses = dates);
   }
 
   Future<void> _loadDay() async {
-    final list = await ref.read(expenseRepoProvider)
+    final list = await ref
+        .read(expenseRepoProvider)
         .getExpensesForDate(_selectedDate);
     if (mounted) setState(() => _dayExpenses = list);
   }
@@ -98,6 +64,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     _loadDay();
     ref.read(expensesProvider.notifier).load();
     ref.invalidate(dashboardSummaryProvider);
+    ref.invalidate(categorySpendingProvider);
   }
 
   Future<void> _openSheet({Expense? editing, DateTime? date}) async {
@@ -105,10 +72,11 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ExpenseSheet(
+      builder: (_) => AddTransactionSheet(
         ref: ref,
         editing: editing,
-        initialDate: date ?? (editing?.timestamp ?? _selectedDate),
+        initialDate:
+            date ?? (editing?.timestamp ?? _selectedDate),
       ),
     );
     _refresh();
@@ -122,7 +90,9 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
         bottom: TabBar(
           controller: _tabs,
           tabs: const [
-            Tab(icon: Icon(Icons.calendar_month_outlined), text: 'Calendar'),
+            Tab(
+                icon: Icon(Icons.calendar_month_outlined),
+                text: 'Calendar'),
             Tab(icon: Icon(Icons.list_rounded), text: 'All'),
           ],
         ),
@@ -137,7 +107,9 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
           final isToday = _isSameDay(_selectedDate, DateTime.now());
           return FloatingActionButton.extended(
             onPressed: () => _openSheet(
-              date: _tabs.index == 0 ? _selectedDate : DateTime.now(),
+              date: _tabs.index == 0
+                  ? _selectedDate
+                  : DateTime.now(),
             ),
             icon: const Icon(Icons.add),
             label: Text(_tabs.index == 1 || isToday
@@ -152,14 +124,16 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
   // ── Calendar tab ──────────────────────────────────────────────────────────
 
   Widget _calendarTab() {
-    final expenses = _dayExpenses.where((e) => !e.isIncome).toList();
+    final expenses =
+        _dayExpenses.where((e) => !e.isIncome).toList();
     final income = _dayExpenses.where((e) => e.isIncome).toList();
-    final dayTotal = expenses.fold<double>(0, (s, e) => s + e.amount);
-    final dayIncome = income.fold<double>(0, (s, e) => s + e.amount);
+    final dayTotal =
+        expenses.fold<double>(0, (s, e) => s + e.amount);
+    final dayIncome =
+        income.fold<double>(0, (s, e) => s + e.amount);
     final isToday = _isSameDay(_selectedDate, DateTime.now());
 
     return Column(children: [
-      // Calendar widget
       Container(
         color: kCard,
         child: Column(children: [
@@ -169,8 +143,8 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
               IconButton(
                 icon: const Icon(Icons.chevron_left_rounded),
                 onPressed: () {
-                  setState(() => _focusedMonth =
-                      DateTime(_focusedMonth.year, _focusedMonth.month - 1));
+                  setState(() => _focusedMonth = DateTime(
+                      _focusedMonth.year, _focusedMonth.month - 1));
                   _loadMonth();
                 },
                 visualDensity: VisualDensity.compact,
@@ -179,15 +153,16 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
                 child: Center(
                   child: Text(
                     DateFormat('MMMM yyyy').format(_focusedMonth),
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
               IconButton(
                 icon: const Icon(Icons.chevron_right_rounded),
                 onPressed: () {
-                  setState(() => _focusedMonth =
-                      DateTime(_focusedMonth.year, _focusedMonth.month + 1));
+                  setState(() => _focusedMonth = DateTime(
+                      _focusedMonth.year, _focusedMonth.month + 1));
                   _loadMonth();
                 },
                 visualDensity: VisualDensity.compact,
@@ -198,7 +173,10 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
             month: _focusedMonth,
             selectedDate: _selectedDate,
             datesWithExpenses: _datesWithExpenses,
-            onDateSelected: (d) { setState(() => _selectedDate = d); _loadDay(); },
+            onDateSelected: (d) {
+              setState(() => _selectedDate = d);
+              _loadDay();
+            },
           ),
           const Divider(height: 1),
         ]),
@@ -211,41 +189,56 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
         child: Row(children: [
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(
-              isToday ? 'Today' : DateFormat('EEEE, d MMMM').format(_selectedDate),
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              isToday
+                  ? 'Today'
+                  : DateFormat('EEEE, d MMMM').format(_selectedDate),
+              style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w700),
             ),
             if (_dayExpenses.isNotEmpty)
-              Text('${_dayExpenses.length} item${_dayExpenses.length > 1 ? "s" : ""}',
-                  style: const TextStyle(fontSize: 12, color: kTextSecondary)),
+              Text(
+                '${_dayExpenses.length} item${_dayExpenses.length > 1 ? "s" : ""}',
+                style: const TextStyle(
+                    fontSize: 12, color: kTextSecondary)),
           ]),
           const Spacer(),
           if (dayIncome > 0)
             Text('+${formatCurrency(dayIncome)}',
                 style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w700, color: kGain)),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: kGain)),
           if (dayIncome > 0 && dayTotal > 0)
             const Text('  ·  ',
-                style: TextStyle(fontSize: 13, color: kTextSecondary)),
+                style:
+                    TextStyle(fontSize: 13, color: kTextSecondary)),
           if (dayTotal > 0)
             Text('−${formatCurrency(dayTotal)}',
                 style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w700, color: kLoss)),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: kLoss)),
         ]),
       ),
 
-      // Day list
       Expanded(
         child: _dayExpenses.isEmpty
-            ? _EmptyDay(date: _selectedDate, onAdd: () => _openSheet())
+            ? _EmptyDay(
+                date: _selectedDate,
+                onAdd: () => _openSheet())
             : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(kPad, 8, kPad, 120),
+                padding:
+                    const EdgeInsets.fromLTRB(kPad, 8, kPad, 120),
                 itemCount: _dayExpenses.length,
                 separatorBuilder: (_, __) => const Gap(8),
                 itemBuilder: (_, i) => _ExpenseRow(
                   expense: _dayExpenses[i],
-                  onTap: () => _openSheet(editing: _dayExpenses[i]),
+                  onTap: () =>
+                      _openSheet(editing: _dayExpenses[i]),
                   onDelete: () async {
-                    await ref.read(expensesProvider.notifier).delete(_dayExpenses[i]);
+                    await ref
+                        .read(expensesProvider.notifier)
+                        .delete(_dayExpenses[i]);
                     _refresh();
                   },
                 ),
@@ -254,12 +247,10 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     ]);
   }
 
-  // ── All tab ───────────────────────────────────────────────────────────────
-
   Widget _allTab() => const _AllTab();
 }
 
-// ── All tab (stateful for period + view-mode) ─────────────────────────────────
+// ── All tab (stateful for period + view-mode + search) ────────────────────────
 
 class _AllTab extends ConsumerStatefulWidget {
   const _AllTab();
@@ -270,14 +261,22 @@ class _AllTab extends ConsumerStatefulWidget {
 class _AllTabState extends ConsumerState<_AllTab> {
   ExpenseFilter _period = ExpenseFilter.thisMonth;
   bool _groupedView = false;
+  bool _searchActive = false;
   int _refreshKey = 0;
-
-  // Expanded groups in grouped view
+  String _query = '';
   final Set<String> _expandedGroups = {};
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   void _refresh() {
     ref.read(expensesProvider.notifier).load();
     ref.invalidate(dashboardSummaryProvider);
+    ref.invalidate(categorySpendingProvider);
     setState(() => _refreshKey++);
   }
 
@@ -286,7 +285,7 @@ class _AllTabState extends ConsumerState<_AllTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ExpenseSheet(
+      builder: (_) => AddTransactionSheet(
         ref: ref,
         editing: editing,
         initialDate: editing?.timestamp ?? DateTime.now(),
@@ -295,72 +294,125 @@ class _AllTabState extends ConsumerState<_AllTab> {
     _refresh();
   }
 
+  List<Expense> _applySearch(List<Expense> list) {
+    if (_query.trim().isEmpty) return list;
+    final q = _query.trim().toLowerCase();
+    return list.where((e) {
+      return e.title.toLowerCase().contains(q) ||
+          (e.category?.toLowerCase().contains(q) ?? false) ||
+          (e.notes?.toLowerCase().contains(q) ?? false) ||
+          (e.paymentMethod?.toLowerCase().contains(q) ?? false);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<Expense>>(
-      // Always fetch the full list for the chosen period
       future: ref.read(expenseRepoProvider).getExpenses(_period),
       key: ValueKey('$_period/$_refreshKey'),
       builder: (context, snap) {
-        final expenses = snap.data ?? [];
+        final allExpenses = snap.data ?? [];
+        final expenses = _applySearch(allExpenses);
 
-        // ── Compute totals ──
-        final income = expenses.where((e) => e.isIncome).fold<double>(0, (s, e) => s + e.amount);
-        final spent = expenses.where((e) => !e.isIncome).fold<double>(0, (s, e) => s + e.amount);
+        final income = expenses
+            .where((e) => e.isIncome)
+            .fold<double>(0, (s, e) => s + e.amount);
+        final spent = expenses
+            .where((e) => !e.isIncome)
+            .fold<double>(0, (s, e) => s + e.amount);
         final net = income - spent;
 
         return Column(children: [
-          // ── Period filter chips ──
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(kPad, 10, kPad, 4),
-            child: Row(
-              children: [
-                ExpenseFilter.thisWeek,
-                ExpenseFilter.thisMonth,
-                ExpenseFilter.thisYear,
-                ExpenseFilter.all,
-              ].map((f) {
-                final label = {
-                  ExpenseFilter.thisWeek: 'This Week',
-                  ExpenseFilter.thisMonth: 'This Month',
-                  ExpenseFilter.thisYear: 'This Year',
-                  ExpenseFilter.all: 'All Time',
-                }[f]!;
-                final sel = f == _period;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    label: Text(label),
-                    selected: sel,
-                    onSelected: (_) => setState(() {
-                      _period = f;
-                      _expandedGroups.clear();
+          // ── Search bar (when active) ──
+          if (_searchActive)
+            Padding(
+              padding:
+                  const EdgeInsets.fromLTRB(kPad, 8, kPad, 0),
+              child: TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                onChanged: (v) => setState(() => _query = v),
+                decoration: InputDecoration(
+                  hintText: 'Search transactions…',
+                  prefixIcon: const Icon(Icons.search_rounded,
+                      size: 20),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.close_rounded,
+                        size: 18),
+                    onPressed: () => setState(() {
+                      _searchActive = false;
+                      _query = '';
+                      _searchCtrl.clear();
                     }),
-                    selectedColor: kPrimary,
-                    checkmarkColor: Colors.white,
-                    labelStyle: TextStyle(
-                        color: sel ? Colors.white : kTextPrimary,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13),
-                    backgroundColor: kCard,
-                    side: BorderSide(color: sel ? kPrimary : kDivider),
                   ),
-                );
-              }).toList(),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                      vertical: 10),
+                ),
+              ),
             ),
-          ),
+
+          // ── Period filter chips ──
+          if (!_searchActive)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding:
+                  const EdgeInsets.fromLTRB(kPad, 10, kPad, 4),
+              child: Row(
+                children: [
+                  ExpenseFilter.thisWeek,
+                  ExpenseFilter.thisMonth,
+                  ExpenseFilter.thisYear,
+                  ExpenseFilter.all,
+                ].map((f) {
+                  final label = {
+                    ExpenseFilter.thisWeek: 'This Week',
+                    ExpenseFilter.thisMonth: 'This Month',
+                    ExpenseFilter.thisYear: 'This Year',
+                    ExpenseFilter.all: 'All Time',
+                  }[f]!;
+                  final sel = f == _period;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(label),
+                      selected: sel,
+                      onSelected: (_) => setState(() {
+                        _period = f;
+                        _expandedGroups.clear();
+                      }),
+                      selectedColor: kPrimary,
+                      checkmarkColor: Colors.white,
+                      labelStyle: TextStyle(
+                          color: sel ? Colors.white : kTextPrimary,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13),
+                      backgroundColor: kCard,
+                      side: BorderSide(
+                          color: sel ? kPrimary : kDivider),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
 
           // ── Period summary bar ──
           if (snap.hasData)
             Container(
-              padding: const EdgeInsets.fromLTRB(kPad, 8, kPad, 8),
+              padding:
+                  const EdgeInsets.fromLTRB(kPad, 8, kPad, 8),
               color: kCard,
               child: Row(children: [
-                _PeriodStat(label: 'Income', value: income, color: kGain),
-                const _Divider(),
-                _PeriodStat(label: 'Spent', value: spent, color: kLoss),
-                const _Divider(),
+                _PeriodStat(
+                    label: 'Income',
+                    value: income,
+                    color: kGain),
+                const _VDivider(),
+                _PeriodStat(
+                    label: 'Spent',
+                    value: spent,
+                    color: kLoss),
+                const _VDivider(),
                 _PeriodStat(
                   label: 'Net',
                   value: net.abs(),
@@ -368,11 +420,34 @@ class _AllTabState extends ConsumerState<_AllTab> {
                   prefix: net >= 0 ? '+' : '−',
                 ),
                 const Spacer(),
+                // Search toggle
+                IconButton(
+                  tooltip: 'Search',
+                  icon: Icon(
+                    _searchActive
+                        ? Icons.search_off_rounded
+                        : Icons.search_rounded,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() {
+                    _searchActive = !_searchActive;
+                    if (!_searchActive) {
+                      _query = '';
+                      _searchCtrl.clear();
+                    }
+                  }),
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                ),
                 // View mode toggle
                 IconButton(
-                  tooltip: _groupedView ? 'List view' : 'Grouped view',
+                  tooltip: _groupedView
+                      ? 'List view'
+                      : 'Grouped view',
                   icon: Icon(
-                    _groupedView ? Icons.list_rounded : Icons.segment_rounded,
+                    _groupedView
+                        ? Icons.list_rounded
+                        : Icons.segment_rounded,
                     size: 20,
                   ),
                   onPressed: () => setState(() {
@@ -389,10 +464,14 @@ class _AllTabState extends ConsumerState<_AllTab> {
 
           // ── Content ──
           Expanded(
-            child: snap.connectionState == ConnectionState.waiting
-                ? const Center(child: CircularProgressIndicator())
+            child: snap.connectionState ==
+                    ConnectionState.waiting
+                ? const Center(
+                    child: CircularProgressIndicator())
                 : expenses.isEmpty
-                    ? const _EmptyAll()
+                    ? (_query.isNotEmpty
+                        ? _EmptySearch(query: _query)
+                        : const _EmptyAll())
                     : _groupedView
                         ? _GroupedView(
                             expenses: expenses,
@@ -404,17 +483,23 @@ class _AllTabState extends ConsumerState<_AllTab> {
                                 _expandedGroups.add(k);
                               }
                             }),
-                            onTapEntry: (e) => _openSheet(editing: e),
+                            onTapEntry: (e) =>
+                                _openSheet(editing: e),
                             onDeleteEntry: (e) async {
-                              await ref.read(expensesProvider.notifier).delete(e);
+                              await ref
+                                  .read(expensesProvider.notifier)
+                                  .delete(e);
                               _refresh();
                             },
                           )
                         : _ListView(
                             expenses: expenses,
-                            onTap: (e) => _openSheet(editing: e),
+                            onTap: (e) =>
+                                _openSheet(editing: e),
                             onDelete: (e) async {
-                              await ref.read(expensesProvider.notifier).delete(e);
+                              await ref
+                                  .read(expensesProvider.notifier)
+                                  .delete(e);
                               _refresh();
                             },
                           ),
@@ -444,7 +529,9 @@ class _PeriodStat extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label,
           style: const TextStyle(
-              fontSize: 10, color: kTextSecondary, fontWeight: FontWeight.w600)),
+              fontSize: 10,
+              color: kTextSecondary,
+              fontWeight: FontWeight.w600)),
       const Gap(2),
       Text('$prefix${formatCurrency(value)}',
           style: TextStyle(
@@ -455,13 +542,13 @@ class _PeriodStat extends StatelessWidget {
   }
 }
 
-class _Divider extends StatelessWidget {
-  const _Divider();
+class _VDivider extends StatelessWidget {
+  const _VDivider();
   @override
-  Widget build(BuildContext context) =>
-      const Padding(
+  Widget build(BuildContext context) => const Padding(
         padding: EdgeInsets.symmetric(horizontal: 14),
-        child: SizedBox(height: 28, child: VerticalDivider(width: 1)),
+        child:
+            SizedBox(height: 28, child: VerticalDivider(width: 1)),
       );
 }
 
@@ -479,13 +566,14 @@ class _ListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Group by date
     final grouped = <DateTime, List<Expense>>{};
     for (final e in expenses) {
-      final day = DateTime(e.timestamp.year, e.timestamp.month, e.timestamp.day);
+      final day = DateTime(
+          e.timestamp.year, e.timestamp.month, e.timestamp.day);
       grouped.putIfAbsent(day, () => []).add(e);
     }
-    final days = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+    final days = grouped.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(kPad, 0, kPad, 120),
@@ -493,17 +581,24 @@ class _ListView extends StatelessWidget {
       itemBuilder: (_, i) {
         final day = days[i];
         final items = grouped[day]!;
-        final spent = items.where((e) => !e.isIncome).fold<double>(0, (s, e) => s + e.amount);
-        final income = items.where((e) => e.isIncome).fold<double>(0, (s, e) => s + e.amount);
+        final spent = items
+            .where((e) => !e.isIncome)
+            .fold<double>(0, (s, e) => s + e.amount);
+        final income = items
+            .where((e) => e.isIncome)
+            .fold<double>(0, (s, e) => s + e.amount);
         final isToday = _isSameDay(day, DateTime.now());
-        final isYest = _isSameDay(day, DateTime.now().subtract(const Duration(days: 1)));
+        final isYest = _isSameDay(
+            day, DateTime.now().subtract(const Duration(days: 1)));
         final label = isToday
             ? 'Today'
             : isYest
                 ? 'Yesterday'
                 : DateFormat('EEE, d MMM').format(day);
 
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
             child: Row(children: [
@@ -517,13 +612,18 @@ class _ListView extends StatelessWidget {
               if (income > 0)
                 Text('+${formatCurrency(income)}',
                     style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600, color: kGain)),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: kGain)),
               if (income > 0 && spent > 0)
-                const Text('  ', style: TextStyle(fontSize: 12)),
+                const Text('  ',
+                    style: TextStyle(fontSize: 12)),
               if (spent > 0)
                 Text('−${formatCurrency(spent)}',
                     style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600, color: kLoss)),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: kLoss)),
             ]),
           ),
           ...items.map((e) => Padding(
@@ -547,7 +647,10 @@ class _TitleGroup {
   final List<Expense> entries;
   final bool isIncome;
   double get total => entries.fold(0, (s, e) => s + e.amount);
-  _TitleGroup({required this.title, required this.entries, required this.isIncome});
+  _TitleGroup(
+      {required this.title,
+      required this.entries,
+      required this.isIncome});
 }
 
 class _GroupedView extends StatelessWidget {
@@ -567,29 +670,33 @@ class _GroupedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Separate income and expense, group each by title
-    Map<String, _TitleGroup> buildGroups(List<Expense> list, bool isIncome) {
+    Map<String, _TitleGroup> buildGroups(
+        List<Expense> list, bool isIncome) {
       final map = <String, _TitleGroup>{};
       for (final e in list) {
         final key = e.title.trim().toLowerCase();
-        final displayTitle = e.title.trim();
+        final display = e.title.trim();
         if (!map.containsKey(key)) {
-          map[key] = _TitleGroup(title: displayTitle, entries: [], isIncome: isIncome);
+          map[key] = _TitleGroup(
+              title: display, entries: [], isIncome: isIncome);
         }
         map[key]!.entries.add(e);
       }
-      // Sort by total descending
       final sorted = map.entries.toList()
-        ..sort((a, b) => b.value.total.compareTo(a.value.total));
+        ..sort((a, b) =>
+            b.value.total.compareTo(a.value.total));
       return Map.fromEntries(sorted);
     }
 
-    final expenseGroups = buildGroups(expenses.where((e) => !e.isIncome).toList(), false);
-    final incomeGroups = buildGroups(expenses.where((e) => e.isIncome).toList(), true);
+    final expenseGroups = buildGroups(
+        expenses.where((e) => !e.isIncome).toList(), false);
+    final incomeGroups = buildGroups(
+        expenses.where((e) => e.isIncome).toList(), true);
 
     final sections = <Widget>[];
 
-    void addSection(String header, Map<String, _TitleGroup> groups, Color headerColor) {
+    void addSection(String header, Map<String, _TitleGroup> groups,
+        Color headerColor) {
       if (groups.isEmpty) return;
       sections.add(Padding(
         padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
@@ -605,45 +712,56 @@ class _GroupedView extends StatelessWidget {
         final group = entry.value;
         final isExpanded = expandedGroups.contains(groupKey);
         final cat = group.isIncome
-            ? _incCatFor(group.entries.first.category)
-            : _expCatFor(group.entries.first.category);
+            ? incCatFor(group.entries.first.category)
+            : expCatFor(group.entries.first.category);
 
         sections.add(Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Group header row
             GestureDetector(
               onTap: () => onToggleGroup(groupKey),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: kCard,
-                  borderRadius: BorderRadius.circular(kRadius),
+                  borderRadius:
+                      BorderRadius.circular(kRadius),
                   border: Border.all(
                     color: isExpanded
-                        ? (group.isIncome ? kGain : kLoss).withOpacity(0.4)
+                        ? (group.isIncome ? kGain : kLoss)
+                            .withAlpha(100)
                         : kDivider,
                   ),
                 ),
                 child: Row(children: [
                   Container(
-                    width: 40, height: 40,
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
-                      color: cat.color.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(10),
+                      color: cat.color.withAlpha(30),
+                      borderRadius:
+                          BorderRadius.circular(10),
                     ),
-                    child: Icon(cat.icon, size: 20, color: cat.color),
+                    child: Icon(cat.icon,
+                        size: 20, color: cat.color),
                   ),
                   const Gap(12),
                   Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
                       Text(group.title,
                           style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 14)),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14)),
                       Text(
                         '${group.entries.length} transaction${group.entries.length > 1 ? "s" : ""}',
-                        style: const TextStyle(color: kTextSecondary, fontSize: 12),
+                        style: const TextStyle(
+                            color: kTextSecondary,
+                            fontSize: 12),
                       ),
                     ]),
                   ),
@@ -654,7 +772,9 @@ class _GroupedView extends StatelessWidget {
                     style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
-                        color: group.isIncome ? kGain : kLoss),
+                        color: group.isIncome
+                            ? kGain
+                            : kLoss),
                   ),
                   const Gap(6),
                   Icon(
@@ -667,27 +787,32 @@ class _GroupedView extends StatelessWidget {
                 ]),
               ),
             ),
-            // Expanded entries
             if (isExpanded)
               Container(
-                margin: const EdgeInsets.only(left: 16, bottom: 4),
+                margin:
+                    const EdgeInsets.only(left: 16, bottom: 4),
                 decoration: BoxDecoration(
                   border: Border(
                     left: BorderSide(
-                        color: (group.isIncome ? kGain : kLoss).withOpacity(0.3),
+                        color: (group.isIncome ? kGain : kLoss)
+                            .withAlpha(76),
                         width: 2),
                   ),
                 ),
                 child: Column(
-                  children: group.entries.map((e) => Padding(
-                    padding: const EdgeInsets.only(left: 8, bottom: 4),
-                    child: _ExpenseRow(
-                      expense: e,
-                      onTap: () => onTapEntry(e),
-                      onDelete: () => onDeleteEntry(e),
-                      compact: true,
-                    ),
-                  )).toList(),
+                  children: group.entries
+                      .map((e) => Padding(
+                            padding: const EdgeInsets.only(
+                                left: 8, bottom: 4),
+                            child: _ExpenseRow(
+                              expense: e,
+                              onTap: () => onTapEntry(e),
+                              onDelete: () =>
+                                  onDeleteEntry(e),
+                              compact: true,
+                            ),
+                          ))
+                      .toList(),
                 ),
               ),
           ],
@@ -723,8 +848,9 @@ class _CalendarGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final firstDay = DateTime(month.year, month.month, 1);
-    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-    final startOffset = firstDay.weekday - 1; // Mon=0
+    final daysInMonth =
+        DateTime(month.year, month.month + 1, 0).day;
+    final startOffset = firstDay.weekday - 1;
     final today = DateTime.now();
 
     return Padding(
@@ -747,7 +873,8 @@ class _CalendarGrid extends StatelessWidget {
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          gridDelegate:
+              const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
             mainAxisSpacing: 2,
             crossAxisSpacing: 2,
@@ -757,21 +884,31 @@ class _CalendarGrid extends StatelessWidget {
           itemBuilder: (_, index) {
             if (index < startOffset) return const SizedBox();
             final day = index - startOffset + 1;
-            final date = DateTime(month.year, month.month, day);
-            final normDate = DateTime(date.year, date.month, date.day);
-            final isSelected = _isSameDay(date, selectedDate);
+            final date =
+                DateTime(month.year, month.month, day);
+            final normDate =
+                DateTime(date.year, date.month, date.day);
+            final isSelected =
+                _isSameDay(date, selectedDate);
             final isToday = _isSameDay(date, today);
-            final hasExp = datesWithExpenses.contains(normDate);
+            final hasExp =
+                datesWithExpenses.contains(normDate);
 
             return GestureDetector(
               onTap: () => onDateSelected(date),
               child: Container(
                 margin: const EdgeInsets.all(1),
                 decoration: BoxDecoration(
-                  color: isSelected ? kPrimary : isToday ? kPrimaryLight : null,
+                  color: isSelected
+                      ? kPrimary
+                      : isToday
+                          ? kPrimaryLight
+                          : null,
                   shape: BoxShape.circle,
                 ),
-                child: Stack(alignment: Alignment.center, children: [
+                child: Stack(
+                    alignment: Alignment.center,
+                    children: [
                   Text('$day',
                       style: TextStyle(
                         fontSize: 13,
@@ -788,9 +925,11 @@ class _CalendarGrid extends StatelessWidget {
                     Positioned(
                       bottom: 3,
                       child: Container(
-                        width: 4, height: 4,
+                        width: 4,
+                        height: 4,
                         decoration: const BoxDecoration(
-                            color: kLoss, shape: BoxShape.circle),
+                            color: kLoss,
+                            shape: BoxShape.circle),
                       ),
                     ),
                 ]),
@@ -820,7 +959,7 @@ class _ExpenseRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cat = _catFor(expense);
+    final cat = catForExpense(expense);
     final isIncome = expense.isIncome;
 
     return Dismissible(
@@ -833,21 +972,27 @@ class _ExpenseRow extends StatelessWidget {
           color: kLoss,
           borderRadius: BorderRadius.circular(kRadius),
         ),
-        child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 22),
+        child: const Icon(Icons.delete_outline_rounded,
+            color: Colors.white, size: 22),
       ),
       confirmDismiss: (_) async {
         return await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            title: Text('Delete ${isIncome ? "income" : "expense"}?'),
-            content: Text('"${expense.title}" — ${formatCurrency(expense.amount)}'),
+            title: Text(
+                'Delete ${isIncome ? "income" : "expense"}?'),
+            content: Text(
+                '"${expense.title}" — ${formatCurrency(expense.amount)}'),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(context, false),
+                  onPressed: () =>
+                      Navigator.pop(context, false),
                   child: const Text('Cancel')),
               TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: TextButton.styleFrom(foregroundColor: kLoss),
+                  onPressed: () =>
+                      Navigator.pop(context, true),
+                  style: TextButton.styleFrom(
+                      foregroundColor: kLoss),
                   child: const Text('Delete')),
             ],
           ),
@@ -866,37 +1011,61 @@ class _ExpenseRow extends StatelessWidget {
           ),
           child: Row(children: [
             Container(
-              width: 40, height: 40,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                color: cat.color.withOpacity(0.12),
+                color: cat.color.withAlpha(30),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(cat.icon, size: 20, color: cat.color),
+              child:
+                  Icon(cat.icon, size: 20, color: cat.color),
             ),
             const Gap(12),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 Text(expense.title,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 14)),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14)),
                 const Gap(2),
                 Row(children: [
-                  Text(compact
-                      ? DateFormat('d MMM, h:mm a').format(expense.timestamp)
-                      : formatTime(expense.timestamp),
-                      style: const TextStyle(
-                          color: kTextSecondary, fontSize: 12)),
+                  Text(
+                    compact
+                        ? DateFormat('d MMM, h:mm a')
+                            .format(expense.timestamp)
+                        : formatTime(expense.timestamp),
+                    style: const TextStyle(
+                        color: kTextSecondary,
+                        fontSize: 12),
+                  ),
                   if (expense.category != null) ...[
                     const Text(' · ',
-                        style: TextStyle(color: kTextSecondary, fontSize: 12)),
+                        style: TextStyle(
+                            color: kTextSecondary,
+                            fontSize: 12)),
                     Text(expense.category!,
                         style: const TextStyle(
-                            color: kTextSecondary, fontSize: 12)),
+                            color: kTextSecondary,
+                            fontSize: 12)),
+                  ],
+                  if (expense.paymentMethod != null) ...[
+                    const Text(' · ',
+                        style: TextStyle(
+                            color: kTextSecondary,
+                            fontSize: 12)),
+                    Text(expense.paymentMethod!,
+                        style: const TextStyle(
+                            color: kTextSecondary,
+                            fontSize: 12)),
                   ],
                 ]),
               ]),
             ),
-            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
               Text(
                 isIncome
                     ? '+${formatCurrency(expense.amount)}'
@@ -930,19 +1099,21 @@ class _EmptyDay extends StatelessWidget {
     return Center(
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.receipt_long_outlined,
-            size: 48, color: kTextSecondary.withOpacity(0.5)),
+            size: 48, color: kTextSecondary.withAlpha(127)),
         const Gap(12),
         Text(
           isToday
               ? 'No transactions today'
               : 'No transactions on ${DateFormat("d MMM").format(date)}',
-          style: const TextStyle(color: kTextSecondary, fontSize: 15),
+          style: const TextStyle(
+              color: kTextSecondary, fontSize: 15),
         ),
         const Gap(8),
         TextButton.icon(
           onPressed: onAdd,
           icon: const Icon(Icons.add, size: 16),
-          label: Text(isToday ? 'Add transaction' : 'Add for this day'),
+          label: Text(
+              isToday ? 'Add transaction' : 'Add for this day'),
         ),
       ]),
     );
@@ -955,505 +1126,26 @@ class _EmptyAll extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Center(
       child: Text('No transactions in this period.',
-          style: TextStyle(color: kTextSecondary, fontSize: 15)),
+          style:
+              TextStyle(color: kTextSecondary, fontSize: 15)),
     );
   }
 }
 
-// ── Add / Edit sheet ──────────────────────────────────────────────────────────
-
-class _ExpenseSheet extends StatefulWidget {
-  final WidgetRef ref;
-  final Expense? editing;
-  final DateTime initialDate;
-
-  const _ExpenseSheet({
-    required this.ref,
-    this.editing,
-    required this.initialDate,
-  });
-
-  @override
-  State<_ExpenseSheet> createState() => _ExpenseSheetState();
-}
-
-class _ExpenseSheetState extends State<_ExpenseSheet> {
-  final _amountCtrl = TextEditingController();
-  final _titleCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
-  String? _category;
-  late DateTime _date;
-  bool _saving = false;
-  bool _isIncome = false;
-
-  bool get _isEdit => widget.editing != null;
-  bool get _isToday => _isSameDay(_date, DateTime.now());
-
-  @override
-  void initState() {
-    super.initState();
-    _date = DateTime(
-        widget.initialDate.year,
-        widget.initialDate.month,
-        widget.initialDate.day);
-    if (_isEdit) {
-      final e = widget.editing!;
-      _amountCtrl.text = e.amount == e.amount.truncateToDouble()
-          ? e.amount.toInt().toString()
-          : e.amount.toStringAsFixed(2);
-      _titleCtrl.text = e.title;
-      _notesCtrl.text = e.notes ?? '';
-      _category = e.category;
-      _isIncome = e.isIncome;
-      _date = DateTime(e.timestamp.year, e.timestamp.month, e.timestamp.day);
-    }
-  }
-
-  @override
-  void dispose() {
-    _amountCtrl.dispose();
-    _titleCtrl.dispose();
-    _notesCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: DateTime(now.year - 5),
-      lastDate: now,
-      helpText: 'Select date',
-    );
-    if (picked != null) setState(() => _date = picked);
-  }
-
-  List<_Cat> get _activeCats => _isIncome ? _incCats : _expCats;
-
-  Future<void> _save() async {
-    final title = _titleCtrl.text.trim();
-    final amount = double.tryParse(_amountCtrl.text.trim());
-
-    if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Enter a valid amount')));
-      return;
-    }
-    if (title.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Enter a description')));
-      return;
-    }
-
-    setState(() => _saving = true);
-
-    final now = DateTime.now();
-    final timestamp = _isEdit
-        ? DateTime(_date.year, _date.month, _date.day,
-            widget.editing!.timestamp.hour, widget.editing!.timestamp.minute)
-        : DateTime(
-            _date.year, _date.month, _date.day, now.hour, now.minute, now.second);
-
-    final notesVal =
-        _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim();
-
-    if (_isEdit) {
-      final updated = widget.editing!.copyWith(
-        title: title,
-        amount: amount,
-        timestamp: timestamp,
-        category: _category,
-        notes: notesVal,
-        isIncome: _isIncome,
-      );
-      await widget.ref
-          .read(expensesProvider.notifier)
-          .update(updated, widget.editing!.amount, widget.editing!.isIncome);
-    } else {
-      await widget.ref.read(expensesProvider.notifier).add(Expense(
-            title: title,
-            amount: amount,
-            timestamp: timestamp,
-            category: _category,
-            notes: notesVal,
-            isIncome: _isIncome,
-          ));
-    }
-
-    if (mounted) Navigator.pop(context);
-  }
-
-  Future<void> _delete() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete transaction?'),
-        content: Text(
-            '"${widget.editing!.title}" — ${formatCurrency(widget.editing!.amount)}'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: TextButton.styleFrom(foregroundColor: kLoss),
-              child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    await widget.ref
-        .read(expensesProvider.notifier)
-        .delete(widget.editing!);
-    if (mounted) Navigator.pop(context);
-  }
-
+class _EmptySearch extends StatelessWidget {
+  final String query;
+  const _EmptySearch({required this.query});
   @override
   Widget build(BuildContext context) {
-    final accentColor = _isIncome ? kGain : kLoss;
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: kCard,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(kPad, 16, kPad, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Handle bar
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                      color: kDivider, borderRadius: BorderRadius.circular(2)),
-                ),
-              ),
-              const Gap(16),
-
-              // ── Income / Expense toggle ──
-              if (!_isEdit)
-                Container(
-                  decoration: BoxDecoration(
-                    color: kBackground,
-                    borderRadius: BorderRadius.circular(kRadius),
-                    border: Border.all(color: kDivider),
-                  ),
-                  padding: const EdgeInsets.all(4),
-                  child: Row(children: [
-                    Expanded(child: _TypeToggleButton(
-                      label: '💸  Expense',
-                      selected: !_isIncome,
-                      color: kLoss,
-                      onTap: () => setState(() {
-                        _isIncome = false;
-                        _category = null;
-                      }),
-                    )),
-                    Expanded(child: _TypeToggleButton(
-                      label: '💰  Income',
-                      selected: _isIncome,
-                      color: kGain,
-                      onTap: () => setState(() {
-                        _isIncome = true;
-                        _category = null;
-                      }),
-                    )),
-                  ]),
-                )
-              else
-                // Edit mode — show type badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: accentColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: accentColor.withOpacity(0.3)),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(_isIncome
-                        ? Icons.arrow_downward_rounded
-                        : Icons.arrow_upward_rounded,
-                        size: 14, color: accentColor),
-                    const Gap(6),
-                    Text(_isIncome ? 'Income' : 'Expense',
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: accentColor)),
-                  ]),
-                ),
-
-              const Gap(16),
-
-              // ── Title row ──
-              Row(children: [
-                Text(_isEdit
-                    ? 'Edit ${_isIncome ? "Income" : "Expense"}'
-                    : (_isIncome ? 'Add Income' : 'Add Expense'),
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w700)),
-                const Spacer(),
-                // Date badge
-                GestureDetector(
-                  onTap: _pickDate,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _isToday
-                          ? kPrimaryLight
-                          : const Color(0xFFFFF7ED),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: _isToday
-                              ? kPrimary
-                              : const Color(0xFFF97316)),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.calendar_today_rounded,
-                          size: 12,
-                          color: _isToday ? kPrimary : const Color(0xFFF97316)),
-                      const Gap(4),
-                      Text(
-                        _isToday ? 'Today' : DateFormat('d MMM').format(_date),
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _isToday
-                                ? kPrimary
-                                : const Color(0xFFF97316)),
-                      ),
-                    ]),
-                  ),
-                ),
-              ]),
-              if (!_isToday)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    DateFormat('EEEE, d MMMM yyyy').format(_date),
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFFF97316)),
-                  ),
-                ),
-              const Gap(16),
-
-              // ── Amount ──
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                decoration: BoxDecoration(
-                  color: kBackground,
-                  borderRadius: BorderRadius.circular(kRadius),
-                  border: Border.all(
-                      color: _saving ? kDivider : accentColor.withOpacity(0.3)),
-                ),
-                child: Row(children: [
-                  Text('₹',
-                      style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          color: accentColor.withOpacity(0.5))),
-                  const Gap(8),
-                  Expanded(
-                    child: TextField(
-                      controller: _amountCtrl,
-                      autofocus: !_isEdit,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
-                      ],
-                      style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        fillColor: Colors.transparent,
-                        hintText: '0',
-                        hintStyle: TextStyle(color: kDivider),
-                      ),
-                    ),
-                  ),
-                ]),
-              ),
-              const Gap(12),
-
-              // ── Description ──
-              TextFormField(
-                controller: _titleCtrl,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                    hintText: _isIncome
-                        ? 'Source (e.g. Monthly Salary)'
-                        : 'What was this for?',
-                    prefixIcon: const Icon(Icons.edit_outlined, size: 18)),
-              ),
-              const Gap(12),
-
-              // ── Category ──
-              const Text('CATEGORY',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: kTextSecondary,
-                      letterSpacing: 0.5)),
-              const Gap(8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _activeCats.map((cat) {
-                  final sel = _category == cat.label;
-                  return GestureDetector(
-                    onTap: () =>
-                        setState(() => _category = sel ? null : cat.label),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: sel
-                            ? cat.color.withOpacity(0.15)
-                            : kBackground,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: sel ? cat.color : kDivider,
-                            width: sel ? 1.5 : 1),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(cat.icon,
-                            size: 14,
-                            color: sel ? cat.color : kTextSecondary),
-                        const Gap(5),
-                        Text(cat.label,
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: sel
-                                    ? FontWeight.w600
-                                    : FontWeight.normal,
-                                color: sel ? cat.color : kTextSecondary)),
-                      ]),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const Gap(12),
-
-              // ── Notes ──
-              TextFormField(
-                controller: _notesCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                    hintText: 'Notes (optional)',
-                    prefixIcon: Icon(Icons.notes_rounded, size: 18)),
-              ),
-              const Gap(20),
-
-              // ── Action buttons ──
-              if (_isEdit)
-                Row(children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _saving ? null : _delete,
-                      icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                      label: const Text('Delete'),
-                      style: OutlinedButton.styleFrom(
-                          foregroundColor: kLoss,
-                          side: const BorderSide(color: kLoss),
-                          padding: const EdgeInsets.symmetric(vertical: 14)),
-                    ),
-                  ),
-                  const Gap(12),
-                  Expanded(
-                    flex: 2,
-                    child: FilledButton(
-                      onPressed: _saving ? null : _save,
-                      style: FilledButton.styleFrom(
-                          backgroundColor: accentColor,
-                          padding: const EdgeInsets.symmetric(vertical: 14)),
-                      child: _saving
-                          ? const SizedBox(
-                              width: 18, height: 18,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2))
-                          : const Text('Save Changes'),
-                    ),
-                  ),
-                ])
-              else
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _saving ? null : _save,
-                    style: FilledButton.styleFrom(
-                        backgroundColor: accentColor,
-                        padding: const EdgeInsets.symmetric(vertical: 14)),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 18, height: 18,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2))
-                        : Text(_isIncome
-                            ? (_isToday
-                                ? 'Add Income'
-                                : 'Add for ${DateFormat("d MMM").format(_date)}')
-                            : (_isToday
-                                ? 'Add Expense'
-                                : 'Add for ${DateFormat("d MMM").format(_date)}')),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Type toggle button ────────────────────────────────────────────────────────
-
-class _TypeToggleButton extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _TypeToggleButton({
-    required this.label,
-    required this.selected,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? color : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : kTextSecondary,
-            ),
-          ),
-        ),
-      ),
+    return Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.search_off_rounded,
+            size: 48, color: kTextSecondary.withAlpha(127)),
+        const Gap(12),
+        Text('No results for "$query"',
+            style: const TextStyle(
+                color: kTextSecondary, fontSize: 15)),
+      ]),
     );
   }
 }

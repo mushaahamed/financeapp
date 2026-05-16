@@ -7,10 +7,12 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/constants.dart';
+import '../../../core/formatters.dart';
 import '../../../data/models/user_settings_model.dart';
 import '../../../data/repositories/expense_repository.dart';
 import '../../../data/services/background_service.dart';
 import '../../../providers/providers.dart';
+import '../../widgets/add_transaction_sheet.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -280,6 +282,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                   const Gap(20),
 
+                  // ── Monthly Budgets ──
+                  _sectionHeader('MONTHLY BUDGETS'),
+                  const Gap(4),
+                  const Text(
+                    'Set spending limits per category. Progress bars appear on the dashboard.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: kTextSecondary,
+                        height: 1.4),
+                  ),
+                  const Gap(8),
+                  _BudgetSection(),
+
+                  const Gap(20),
+
                   // ── Export Data ──
                   _sectionHeader('EXPORT DATA'),
                   const Gap(8),
@@ -474,6 +491,181 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           children: children,
         ),
       );
+}
+
+// ── Budget section widget ─────────────────────────────────────────────────────
+
+class _BudgetSection extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_BudgetSection> createState() => _BudgetSectionState();
+}
+
+class _BudgetSectionState extends ConsumerState<_BudgetSection> {
+  Future<void> _showBudgetDialog(
+      String? existingCategory, double? existingLimit) async {
+    final TextEditingController limitCtrl = TextEditingController(
+        text: existingLimit?.toStringAsFixed(0) ?? '');
+    String? selectedCat = existingCategory;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: Text(existingCategory == null
+              ? 'Add Budget'
+              : 'Edit Budget'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (existingCategory == null) ...[
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Category',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: kTextSecondary)),
+                ),
+                const Gap(8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: kExpCats.map((c) {
+                    final sel = selectedCat == c.label;
+                    return GestureDetector(
+                      onTap: () => setS(() => selectedCat = c.label),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: sel
+                              ? c.color.withAlpha(30)
+                              : kBackground,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: sel ? c.color : kDivider),
+                        ),
+                        child: Text(c.label,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: sel ? c.color : kTextSecondary,
+                                fontWeight: sel
+                                    ? FontWeight.w600
+                                    : FontWeight.normal)),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const Gap(16),
+              ],
+              TextField(
+                controller: limitCtrl,
+                autofocus: existingCategory != null,
+                keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Monthly limit (₹)',
+                  prefixText: '₹  ',
+                ),
+              ),
+            ]),
+          ),
+          actions: [
+            if (existingCategory != null)
+              TextButton(
+                onPressed: () {
+                  ref
+                      .read(budgetsProvider.notifier)
+                      .remove(existingCategory);
+                  Navigator.pop(ctx);
+                },
+                style:
+                    TextButton.styleFrom(foregroundColor: kLoss),
+                child: const Text('Remove'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final cat = selectedCat ?? existingCategory;
+                final lim =
+                    double.tryParse(limitCtrl.text.trim());
+                if (cat == null || lim == null || lim <= 0) {
+                  return;
+                }
+                ref.read(budgetsProvider.notifier).set(cat, lim);
+                Navigator.pop(ctx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final budgets = ref.watch(budgetsProvider);
+
+    return Container(
+      padding: const EdgeInsets.all(kPad),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        border: Border.all(color: kDivider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (budgets.isEmpty)
+          const Text(
+            'No budgets set yet.',
+            style: TextStyle(fontSize: 13, color: kTextSecondary),
+          ),
+        ...budgets.entries.map((e) {
+          final cat =
+              kExpCats.where((c) => c.label == e.key).firstOrNull;
+          return ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: cat != null
+                ? Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: cat.color.withAlpha(25),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(cat.icon,
+                        size: 18, color: cat.color),
+                  )
+                : null,
+            title: Text(e.key,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w500)),
+            subtitle: Text(
+                '${formatCurrency(e.value)} / month',
+                style: const TextStyle(
+                    fontSize: 12, color: kTextSecondary)),
+            trailing: IconButton(
+              icon: const Icon(Icons.edit_outlined,
+                  size: 18, color: kTextSecondary),
+              onPressed: () =>
+                  _showBudgetDialog(e.key, e.value),
+            ),
+          );
+        }),
+        const Gap(8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _showBudgetDialog(null, null),
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('Add Budget Limit'),
+          ),
+        ),
+      ]),
+    );
+  }
 }
 
 // ── Export button widget ──────────────────────────────────────────────────────
